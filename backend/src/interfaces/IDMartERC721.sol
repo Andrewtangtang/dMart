@@ -6,8 +6,6 @@ import "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 interface IDMartERC721 is IERC721 {
     function name() external pure returns (string memory);
     function symbol() external pure returns (string memory);
-    function decimals() external pure returns (uint8);
-    function totalSupply() external view returns (uint);
     function balanceOf(address owner) external view returns (uint);
     function allowance(address owner, address spender) external view returns (uint);
 

@@ -2,17 +2,17 @@
 pragma solidity ^0.8.0;
 
 interface IDMartFactory {
-    event PoolCreated(address indexed token0, address indexed token1, address pool, uint);
+    event ProjectCreated(address indexed project, uint256 indexed amount);
 
-    function feeTo() external view returns (address);
-    function feeToSetter() external view returns (address);
+    // function feeTo() external view returns (address);
+    // function feeToSetter() external view returns (address);
 
-    function getPool(address tokenA, address tokenB) external view returns (address pool);
-    function allPools(uint) external view returns (address pool);
-    function allPoolsLength() external view returns (uint);
+    function getProject(uint256 id) external view returns (address project);
+    function getAllProjects(address user) external view returns (address project);
+    function allProjectsLength() external view returns (uint256);
 
-    function createPool(address creator, uint256 goal) external returns (address pool);
+    function createProject(address creator, uint256 amount) external returns (address project);
 
-    function setFeeTo(address) external;
-    function setFeeToSetter(address) external;
+    // function setFeeTo(address) external;
+    // function setFeeToSetter(address) external;
 }

@@ -2,8 +2,9 @@
 pragma solidity ^0.8.0;
 
 import './interfaces/IDMartERC20.sol';
+import 'openzeppelin-contracts/contracts/access/Ownable.sol';
 
-contract DMartERC20 is IDMartERC20 {
+contract DMartERC20 is IDMartERC20, Ownable {
     string public constant name = 'DMart';
     string public constant symbol = 'DMFT';
     uint8 public constant decimals = 18;
@@ -16,7 +17,7 @@ contract DMartERC20 is IDMartERC20 {
     bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
     mapping(address => uint256) public nonces;
 
-    constructor(uint256 _totalSupply) {
+    constructor(address initialOwner) Ownable(initialOwner) {
         uint256 chainId;
         assembly {
             chainId := chainid()
@@ -30,30 +31,38 @@ contract DMartERC20 is IDMartERC20 {
                 address(this)
             )
         );
-        totalSupply = _totalSupply;
     }
-
+    
     function _mint(address to, uint256 value) internal {
         totalSupply += value;
         balanceOf[to] += value;
         emit Transfer(address(0), to, value);
     }
 
+
     function _burn(address from, uint256 value) internal {
+        require(balanceOf[from] >= value, "Insufficient balance to burn.");
         balanceOf[from] -= value;
         totalSupply -= value;
         emit Transfer(from, address(0), value);
     }
 
     function _approve(address owner, address spender, uint256 value) private {
+        require(owner != address(0),"Invalid Owner Address");
         allowance[owner][spender] = value;
         emit Approval(owner, spender, value);
     }
 
     function _transfer(address from, address to, uint256 value) private {
+        require(from != address(0),"Transfer from zero address is not allowed.");
+        require(balanceOf[from] >= value,"Insufficient balance to transfer");
         balanceOf[from] -= value;
         balanceOf[to] += value;
         emit Transfer(from, to, value);
+    }
+
+    function mint(address to, uint256 value) external onlyOwner{
+        _mint(to, value);
     }
 
     function approve(address spender, uint256 value) external returns (bool) {
@@ -67,9 +76,8 @@ contract DMartERC20 is IDMartERC20 {
     }
 
     function transferFrom(address from, address to, uint256 value) external returns (bool) {
-        if (allowance[from][msg.sender] != uint256(0)) {
-            allowance[from][msg.sender] -= value;
-        }
+        require(allowance[from][msg.sender] >= value, "Allowance too low for transfer.");
+        allowance[from][msg.sender] -= value;
         _transfer(from, to, value);
         return true;
     }

@@ -26,6 +26,7 @@ yarn start
 ```
 cd backend/src
 forge install
+forge install OpenZeppelin/openzeppelin-contracts --no-commit
 ```
 ---
 
