@@ -18,6 +18,7 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     address public factory;
     address public token0;
     address public token1;
+	address public aaveManager;
 
     uint112 private reserve0;           // uses single storage slot, accessible via getReserves
     uint112 private reserve1;           // uses single storage slot, accessible via getReserves
@@ -189,5 +190,10 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     // force reserves to match balances
     function sync() external lock {
         _update(IERC20(token0).balanceOf(address(this)), IERC20(token1).balanceOf(address(this)), reserve0, reserve1);
+    }
+
+	function setAaveManager( address _manager ){
+		require( msg.sender == factory, "Only factory can set." );
+		aaveManager = _manager;
     }
 }

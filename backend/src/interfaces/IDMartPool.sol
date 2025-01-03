@@ -34,6 +34,8 @@ interface IDMartPool {
     function burn(address to) external returns (uint amount0, uint amount1);
     function skim(address to) external;
     function sync() external;
+    
+    function setAaveManager( address _manager );
 
     function initialize(address, address) external;
 }
