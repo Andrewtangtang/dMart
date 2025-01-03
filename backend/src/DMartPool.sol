@@ -7,6 +7,7 @@ import './DMartERC20.sol';
 import './DMartERC721.sol';
 import './interfaces/IDMartFactory.sol';
 import './interfaces/IDMartCallee.sol';
+import './AaveManager.sol';
 
 contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     using SafeMath  for uint;
