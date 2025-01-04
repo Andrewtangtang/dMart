@@ -7,6 +7,7 @@ import './DMartERC20.sol';
 import './DMartERC721.sol';
 import './interfaces/IDMartFactory.sol';
 import './interfaces/IDMartCallee.sol';
+import './interfaces/IAavePool.sol';
 
 contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     using SafeMath  for uint;
@@ -18,6 +19,8 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     address public factory;
     address public token0;
     address public token1;
+	address public aavePool;			// Aave V3 Pool contract address
+	address public aaveAsset;			// the asset to interact with Aave (USDT)
 
     uint112 private reserve0;           // uses single storage slot, accessible via getReserves
     uint112 private reserve1;           // uses single storage slot, accessible via getReserves
@@ -26,6 +29,7 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     uint public price0CumulativeLast;
     uint public price1CumulativeLast;
     uint public kLast; // reserve0 * reserve1, as of immediately after the most recent liquidity event
+	uint public stakedInAave;
 
     uint private unlocked = 1;
     modifier lock() {
@@ -49,6 +53,8 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     event Mint(address indexed sender, uint amount0, uint amount1);
     event Burn(address indexed sender, uint amount0, uint amount1, address indexed to);
     event Sync(uint112 reserve0, uint112 reserve1);
+	event AaveDeposit( address indexed caller, uint amount );
+	event AaveWithdraw( address indexed caller, uint amount, uint actualReceived );
 
     constructor() public {
         factory = msg.sender;
@@ -190,4 +196,32 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     function sync() external lock {
         _update(IERC20(token0).balanceOf(address(this)), IERC20(token1).balanceOf(address(this)), reserve0, reserve1);
     }
+
+
+	// Aave V3
+	function setAaveConfig( address _aavePool, address _aaveAsset ){
+			require( msg.sender == factory, "Only factory can set Aave config." );
+			aavePool = _aavePool;
+			aaveAsset = _aaveAsset;
+	}
+
+	function depositToAave( uint amount ) external lock{
+			// make sure we have enough balance in the contract
+			uint balance = IERC20( aaveAsset ).balanceOf( address( this ) );
+			require( ( balance >= amount ), "Not enough balance to deposit." );
+
+			// approve Aave Pool
+			IERC20( aaveAsset ).approve( aavePool, amount );
+
+			IAavePool( aavePool ).supply( aaveAsset, amount, address( this ), 0 );
+
+			// update the record of the staked asset
+			stakedInAave += amount;
+
+			emit AaveDeposit( msg.sender, amount );
+	}
+
+	function withdrawFromAave( uint amount ) external lock{
+			;
+	}
 }
