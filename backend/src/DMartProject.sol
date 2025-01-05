@@ -8,7 +8,7 @@ import './DMartERC721.sol';
 import './interfaces/IDMartFactory.sol';
 import './interfaces/IDMartCallee.sol';
 
-contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
+contract DMartPorject is IDMartPool, DMartERC20, DMartERC721 {
     using SafeMath  for uint;
     using UQ112x112 for uint224;
 
