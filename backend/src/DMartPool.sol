@@ -21,6 +21,8 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     address public token1;
 	address public aavePool;			// Aave V3 Pool contract address
 	address public aaveAsset;			// the asset to interact with Aave (USDT)
+	address public aToken;				// the corresponding aToken address
+	address public platformAddress;		// the address to receive a share of interests
 
     uint112 private reserve0;           // uses single storage slot, accessible via getReserves
     uint112 private reserve1;           // uses single storage slot, accessible via getReserves
@@ -29,7 +31,7 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     uint public price0CumulativeLast;
     uint public price1CumulativeLast;
     uint public kLast; // reserve0 * reserve1, as of immediately after the most recent liquidity event
-	uint public stakedInAave;
+	uint public stakedInAave;			// the principal staked in Aave
 
     uint private unlocked = 1;
     modifier lock() {
@@ -54,7 +56,7 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
     event Burn(address indexed sender, uint amount0, uint amount1, address indexed to);
     event Sync(uint112 reserve0, uint112 reserve1);
 	event AaveDeposit( address indexed caller, uint amount );
-	event AaveWithdraw( address indexed caller, uint amount, uint actualReceived );
+	event AaveWithdraw( address indexed caller, uint requestedPrincipal, uint actualPrincipal, uint userInterest, uint platformInterest, uint totalReceived );
 
     constructor() public {
         factory = msg.sender;
@@ -199,13 +201,21 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
 
 
 	// Aave V3
-	function setAaveConfig( address _aavePool, address _aaveAsset ){
+	function setAaveConfig( address _aavePool, address _aaveAsset, address _aToken, address _platform ) external{
 			require( msg.sender == factory, "Only factory can set Aave config." );
 			aavePool = _aavePool;
 			aaveAsset = _aaveAsset;
+			aToken = _aToken;
+			platformAddress = _platform;
+	}
+
+	function getAaveBalance() public view returns (uint){
+			return ( IERC20( aToken ).balanceOf( address( this ) ) );
 	}
 
 	function depositToAave( uint amount ) external lock{
+			require( ( aavePool != address(0) ) && ( aaveAsset != address(0) ), "Aave config not set." );
+
 			// make sure we have enough balance in the contract
 			uint balance = IERC20( aaveAsset ).balanceOf( address( this ) );
 			require( ( balance >= amount ), "Not enough balance to deposit." );
@@ -221,7 +231,34 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
 			emit AaveDeposit( msg.sender, amount );
 	}
 
-	function withdrawFromAave( uint amount ) external lock{
-			;
+	function withdrawFromAave( uint principal ) external lock returns ( uint actualPrincipal, uint userInterest, uint platformInterest ){
+			require( ( aavePool != address(0) ) && ( aaveAsset != address(0) ), "Aave config not set." );
+
+			require( principal > 0, "Principal must > 0." );
+			require( principal <= stakedInAave, "Not enough staked principal in Aave." );
+
+			uint totalRedeemable = getAaveBalance(), ratio = ( principal * 1e18 ) / stakedInAave;
+			uint toWithdraw = ( totalRedeemable * ratio ) / 1e18;
+
+			uint actualReceived = IAavePool( aavePool ).withdraw( aaveAsset, toWithdraw, address( this ) );
+
+			if( actualReceived > principal ){
+				uint interest = actualReceived - principal;
+				platformInterest = interest / 2, userInterest = interest - platformInterest, actualPrincipal = principal;
+
+				// distributing the interests
+				if( userInterest > 0 ) _safeTransfer( aaveAsset, msg.sender, userInterest );
+				if( platformInterest > 0 ) _safeTransfer( aaveAsset, platformAddress, platformInterest );
+			}
+			else{
+					actualPrincipal = actualReceived;
+					userInterest = platformInterest = 0;
+			}
+
+			stakedInAave -= principal;
+
+			emit AaveWithdraw( msg.sender, principal, userInterest, platformInterest, actualReceived );
+
+			return ( actualPrincipal, userInterest, platformInterest );
 	}
 }
