@@ -237,14 +237,17 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
 			require( principal > 0, "Principal must > 0." );
 			require( principal <= stakedInAave, "Not enough staked principal in Aave." );
 
-			uint totalRedeemable = getAaveBalance(), ratio = ( principal * 1e18 ) / stakedInAave;
+			uint totalRedeemable = getAaveBalance();
+			uint ratio = ( principal * 1e18 ) / stakedInAave;
 			uint toWithdraw = ( totalRedeemable * ratio ) / 1e18;
 
 			uint actualReceived = IAavePool( aavePool ).withdraw( aaveAsset, toWithdraw, address( this ) );
 
 			if( actualReceived > principal ){
 				uint interest = actualReceived - principal;
-				platformInterest = interest / 2, userInterest = interest - platformInterest, actualPrincipal = principal;
+				platformInterest = interest / 2;
+				userInterest = interest - platformInterest;
+				actualPrincipal = principal;
 
 				// distributing the interests
 				if( userInterest > 0 ) _safeTransfer( aaveAsset, msg.sender, userInterest );
