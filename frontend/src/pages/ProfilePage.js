@@ -1,16 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProjectCard from '../components/ProjectCard';
 import { mockProjects } from '../data/mockData';
+import CreateProjectModal from '../components/CreateProjectModal';
+import web3Service from '../services/web3Service';
 
 const ProfilePage = () => {
   const [activeTab, setActiveTab] = useState('my-projects');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [walletAddress, setWalletAddress] = useState('');
+
+  useEffect(() => {
+    if (web3Service.isConnected()) {
+      setWalletAddress(web3Service.getCurrentAccount());
+    }
+  }, []);
 
   // 模擬用戶數據
   const userStats = {
     participatedCount: 51,
-    createdCount: 1,
-    walletAddress: '0x5B38Da6a701c568545dCfcB03FcB875f56beddC4'
+    createdCount: 1
   };
 
   return (
@@ -37,9 +46,15 @@ const ProfilePage = () => {
               <p className="text-sm text-gray-500 mb-1">錢包地址</p>
               <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-md">
                 <code className="text-xs text-gray-700 flex-1 overflow-hidden text-ellipsis">
-                  {userStats.walletAddress}
+                  {walletAddress}
                 </code>
-                <button className="text-[#00AA9F] hover:text-[#009990]">
+                <button 
+                  className="text-[#00AA9F] hover:text-[#009990]"
+                  onClick={() => {
+                    navigator.clipboard.writeText(walletAddress);
+                    alert('已複製到剪貼簿');
+                  }}
+                >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
@@ -104,15 +119,15 @@ const ProfilePage = () => {
               </div>
 
               {/* 發起募資按鈕 */}
-              <Link
-                to="/create-project"
-                className="bg-[#FFAD36] text-white px-8 py-2.5 rounded-md hover:bg-[#FF9D16] transition-colors inline-flex items-center gap-2"
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-2 bg-[#FFAD36] text-white rounded-full hover:bg-[#FF9D16] transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
                 發起募資
-              </Link>
+              </button>
             </div>
           </div>
 
@@ -153,6 +168,12 @@ const ProfilePage = () => {
           )}
         </div>
       </div>
+
+      {/* 發起募資�窗 */}
+      <CreateProjectModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+      />
     </div>
   );
 };
