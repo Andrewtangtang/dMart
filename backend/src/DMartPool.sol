@@ -40,6 +40,10 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
         _;
         unlocked = 1;
     }
+	modifier onlyFactory(){
+			require( msg.sender == factory, "Only factory." );
+			_;
+	}
 
     function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
         _reserve0 = reserve0;
@@ -213,7 +217,7 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
 			return ( IERC20( aToken ).balanceOf( address( this ) ) );
 	}
 
-	function depositToAave( uint amount ) external lock{
+	function depositToAave( uint amount ) external lock onlyFactory{
 			require( ( aavePool != address(0) ) && ( aaveAsset != address(0) ), "Aave config not set." );
 
 			// make sure we have enough balance in the contract
@@ -231,7 +235,7 @@ contract DMartPool is IDMartPool, DMartERC20, DMartERC721 {
 			emit AaveDeposit( msg.sender, amount );
 	}
 
-	function withdrawFromAave( uint principal ) external lock returns ( uint actualPrincipal, uint userInterest, uint platformInterest ){
+	function withdrawFromAave( uint principal ) external lock onlyFactory returns ( uint actualPrincipal, uint userInterest, uint platformInterest ){
 			require( ( aavePool != address(0) ) && ( aaveAsset != address(0) ), "Aave config not set." );
 
 			require( principal > 0, "Principal must > 0." );
