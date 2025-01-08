@@ -13,16 +13,11 @@ import "@chainlink/contracts/src/v0.8/ConfirmedOwner.sol";
 
 /**
  * @dev 
- * 這個合約示範一個 "投票自動化" 流程:
  *   - NFT投票(Off-chain Snapshot,三選: Yes/No/Incomplete)
  *   - 由 Chainlink Automation 週期檢查 => 
  *       a) 創建投票
  *       b) 結束時抓取投票結果
  *   - 透過 Chainlink Any-API (sendChainlinkRequestTo) 與External Adapter溝通
- *
- * 要點:
- *   - "checkUpkeep / performUpkeep" 使用 override => 介面函式隱含virtual
- *   - fully implement "fulfill" for create & get
  */
 contract DMartAutoVoteFull is ChainlinkClient, KeeperCompatibleInterface, ConfirmedOwner {
 
@@ -282,7 +277,5 @@ contract DMartAutoVoteFull is ChainlinkClient, KeeperCompatibleInterface, Confir
         LinkTokenInterface link = LinkTokenInterface(chainlinkTokenAddress());
         require(link.transfer(msg.sender, link.balanceOf(address(this))), "Unable to transfer LINK");
     }
-
-
 }
 
