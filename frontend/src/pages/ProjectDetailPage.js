@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import DonateModal from '../components/DonateModal';
 
 // 模擬數據
 const mockTimeData = [
@@ -59,6 +60,7 @@ const ProjectDetailPage = () => {
   const [error, setError] = useState(null);
   const [selectedReward, setSelectedReward] = useState(null);
   const [activeTab, setActiveTab] = useState('description'); // 'description' | 'updates' | 'faq'
+  const [isDonateModalOpen, setIsDonateModalOpen] = useState(false);
 
   // 數據讀取邏輯（待啟用）
   useEffect(() => {
@@ -105,7 +107,10 @@ const ProjectDetailPage = () => {
 
           {/* 按鈕組 */}
           <div className="flex gap-4">
-            <button className="flex-1 bg-[#FFAD36] text-white py-3 rounded-md hover:bg-[#FF9D16] transition-colors text-lg font-medium">
+            <button 
+              className="flex-1 bg-[#FFAD36] text-white py-3 rounded-md hover:bg-[#FF9D16] transition-colors text-lg font-medium"
+              onClick={() => setIsDonateModalOpen(true)}
+            >
               贊助專案
             </button>
             <button 
@@ -316,6 +321,13 @@ const ProjectDetailPage = () => {
           </p>
         </div>
       </div>
+
+      {/* 贊助彈窗 */}
+      <DonateModal
+        isOpen={isDonateModalOpen}
+        onClose={() => setIsDonateModalOpen(false)}
+        projectTitle="募資商品名稱"
+      />
     </div>
   );
 };
