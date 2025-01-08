@@ -89,7 +89,6 @@ contract DMartProject {
         uint256 balance = IERC20(USDT).balanceOf(address(_creator));
         require( balance >= _collateral , "Not enough balance to create a projet." );
         IERC20(USDT).transferFrom(_creator, address(this), _collateral);
-        require(success, "Token transferFrom failed");
 
         depositToAave(_collateral);
     }
