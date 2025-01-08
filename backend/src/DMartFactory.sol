@@ -2,49 +2,52 @@
 pragma solidity ^0.8.0;
 
 import './interfaces/IDMartFactory.sol';
-import './DMartPool.sol';
+import './DMartProject.sol';
 
-contract UniswapV2Factory is IDMartFactory {
-    address public feeTo;
-    address public feeToSetter;
+contract DMartFactory is IDMartFactory {
+    address private _owner;
 
-    mapping(address => mapping(address => address)) public gerPool;
-    address[] public allPools;
+    mapping(address => address[]) public _getProjects;
+    mapping(address => uint256) public nounces;
+    address[] public allProjects;
 
-    event PoolCreated(address indexed USDT, address indexed token1, address pool, uint);
+    event ProjectCreated(address indexed project, uint256 indexed fund);
 
-    constructor(address _feeToSetter) public {
-        feeToSetter = _feeToSetter;
+    constructor(address owner_) {
+        _owner = owner_;
     }
 
-    function allPoolsLength() external view returns (uint) {
-        return allPools.length;
+    function owner() public view returns (address) {
+        return _owner;
     }
 
-    function createPool(address tokenA, address tokenB) external returns (address pool) {
-        require(tokenA != tokenB, 'UniswapV2: IDENTICAL_ADDRESSES');
-        (address USDT, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
-        require(USDT != address(0), 'UniswapV2: ZERO_ADDRESS');
-        require(getPool[USDT][token1] == address(0), 'UniswapV2: PAIR_EXISTS'); // single check is sufficient
-        bytes memory bytecode = type(UniswapV2Pool).creationCode;
-        bytes32 salt = keccak256(abi.encodePacked(USDT, token1));
+    function getProject(uint256 id) public view returns (address project){
+        require(allProjects[id] != address(0), "Invalid id.");
+        return allProjects[id];
+    }
+
+    function getProject(address creator, uint256 id) public view returns (address project){
+        require(creator != address(0), "Invalid creator.");
+        require(id < _getProjects[creator].length, "Invalid id.");
+        return _getProjects[creator][id];
+    }
+
+    function allProjectsLength() public view returns (uint) {
+        return allProjects.length;
+    }
+
+    function createProject(uint256 fund) external returns (address project) {
+        address creator = msg.sender;
+        require(creator != address(0), "Creator doesn't exist.");
+        require(fund > 0, "You have to set the amount of fund.");
+        bytes memory bytecode = type(DMartProject).creationCode;
+        bytes32 salt = keccak256(abi.encodePacked(address(this), creator,nounces[creator]));
         assembly {
-            pool := create2(0, add(bytecode, 32), mload(bytecode), salt)
+            project := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
-        IUniswapV2Pool(pool).initialize(USDT, token1);
-        getPool[USDT][token1] = pool;
-        getPool[token1][USDT] = pool; // populate mapping in the reverse direction
-        allPools.push(pool);
-        emit PoolCreated(USDT, token1, pool, allPools.length);
-    }
-
-    function setFeeTo(address _feeTo) external {
-        require(msg.sender == feeToSetter, 'UniswapV2: FORBIDDEN');
-        feeTo = _feeTo;
-    }
-
-    function setFeeToSetter(address _feeToSetter) external {
-        require(msg.sender == feeToSetter, 'UniswapV2: FORBIDDEN');
-        feeToSetter = _feeToSetter;
+        DMartProject(project).initialize(fund);
+        allProjects.push(project);
+        nounces[creator]++;
+        emit ProjectCreated(creator, fund);
     }
 }
