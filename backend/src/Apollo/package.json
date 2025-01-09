@@ -1,0 +1,20 @@
+{
+  "name": "Apollo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "compile": "tsc",
+    "start": "yarn compile && node ./codegen/index.js"
+  },
+  "dependencies": {
+    "@apollo/server": "^4.11.3",
+    "graphql": "^16.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
