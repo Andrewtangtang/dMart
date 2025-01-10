@@ -115,7 +115,6 @@ contract DMartProject {
      * @param amount 捐款金額
      */
     function donate(uint256 amount) external lock {
-        require(totalRaised + amount <= target, "Exceed target");
         require(IERC20(usdt).balanceOf(msg.sender) >= amount, "Donator has not enough balance");
 
         // 轉移捐款至合約
