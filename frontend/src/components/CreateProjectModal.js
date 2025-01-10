@@ -153,12 +153,15 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
             <select
               value={formData.targetAmount}
               onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#00AA9F] focus:border-[#00AA9F]"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#00AA9F] focus:border-[#00AA9F] mb-2"
             >
               <option value="100">100 USDT</option>
               <option value="200">200 USDT</option>
               <option value="300">300 USDT</option>
             </select>
+            <p className="text-sm text-gray-600">
+              需支付保證金：{(Number(formData.targetAmount) * 0.2).toFixed(2)} USDT（募資金額的20%）
+            </p>
           </div>
 
           {/* 募資期限 */}

@@ -3,49 +3,88 @@ import { useParams } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import DonateModal from '../components/DonateModal';
 
-// 模擬數據
-const mockTimeData = [
-  { day: '0', amount: 0 },
-  { day: '5', amount: 25000 },
-  { day: '10', amount: 50000 },
-  { day: '15', amount: 75000 },
-  { day: '20', amount: 100000 },
-];
+// 獲取專案募資時間軸數據
+const getProjectTimelineData = async (projectId) => {
+  // TODO: 這裡將來要改為實際從智能合約獲取資料
+  return [
+    { day: '0', amount: 0 },
+    { day: '5', amount: 25000 },
+    { day: '10', amount: 50000 },
+    { day: '15', amount: 75000 },
+    { day: '20', amount: 100000 },
+  ];
+};
 
-// 後端 API 串接函數（待實現）
-const fetchProjectData = async (projectId) => {
-  // TODO: 實現與後端的 API 串接
-  // return await fetch(`/api/projects/${projectId}`).then(res => res.json());
+// 獲取專案詳細資訊
+const getProjectDetails = async (projectId) => {
+  // TODO: 這裡將來要改為實際從智能合約獲取資料
   return {
     id: projectId,
-    title: '募資商品名稱',
-    category: '設計',
+    title: '創新科技產品開發計畫',
+    category: '科技',
     image: 'https://picsum.photos/800/600',
-    creator: {
-      name: 'Author Name',
+    author: {
+      address: '0x1234...5678',
+      name: 'John Doe',
       avatar: 'https://picsum.photos/50/50',
-      description: '創作者簡介...'
+      description: '資深產品開發者，擁有多年硬體研發經驗。專注於創新科技產品的開發與實現，致力於將創新想法轉化為實際產品。'
     },
     targetAmount: 100000,
     currentAmount: 75000,
     backerCount: 200,
-    remainingDays: 3,
+    endTime: '2024-02-10T00:00:00Z',
+    status: 'active', // 'active' | 'ended'
     progress: 75,
-    description: '專案詳細描述...',
+    description: `我們正在開發一款革命性的智能產品，結合最新的物聯網技術與人工智慧應用。
+    
+    這個產品將改變人們的日常生活方式，提供更智能、更便捷的使用體驗。我們的團隊擁有豐富的研發經驗，
+    致力於將這個創新概念轉化為實際的產品。
+    
+    資金將用於：
+    - 產品原型開發
+    - 核心技術研發
+    - 生產線建置
+    - 市場推廣`,
+    
     updates: [
-      { date: '2024-01-03', content: '專案更新內容...' }
-    ],
-    faqs: [
-      { question: '常見問題...', answer: '回答內容...' }
-    ],
-    rewards: [
       {
         id: 1,
-        amount: 1000,
-        title: '回饋方案 A',
-        description: '回饋內容描述...',
+        date: '2024-01-03',
+        title: '開發進度更新',
+        content: '我們已完成產品原型的第一階段開發，目前正在進行功能測試...'
+      }
+    ],
+    
+    faqs: [
+      {
+        id: 1,
+        question: '預計什麼時候可以收到產品？',
+        answer: '我們預計在募資結束後 6 個月內完成生產並寄出產品。'
+      },
+      {
+        id: 2,
+        question: '產品保固期限是多久？',
+        answer: '產品保固期為一年，期間內如有品質問題我們將提供免費維修服務。'
+      }
+    ],
+    
+    plans: [
+      {
+        id: 1,
+        price: 1000,
+        title: '超早鳥專案',
+        description: '產品一台 + 專屬贊助者紀念品',
         limitedQuantity: 100,
         remainingQuantity: 50,
+        estimatedDelivery: '2024-12'
+      },
+      {
+        id: 2,
+        price: 2000,
+        title: '限定版專案',
+        description: '限定版產品一台 + 專屬贊助者紀念品 + 一年延長保固',
+        limitedQuantity: 50,
+        remainingQuantity: 25,
         estimatedDelivery: '2024-12'
       }
     ]
@@ -53,30 +92,59 @@ const fetchProjectData = async (projectId) => {
 };
 
 const ProjectDetailPage = () => {
-  const { id } = useParams(); // 從 URL 獲取專案 ID
+  const { id } = useParams();
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [projectData, setProjectData] = useState(null);
+  const [timelineData, setTimelineData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedReward, setSelectedReward] = useState(null);
-  const [activeTab, setActiveTab] = useState('description'); // 'description' | 'updates' | 'faq'
+  const [activeTab, setActiveTab] = useState('description');
   const [isDonateModalOpen, setIsDonateModalOpen] = useState(false);
 
-  // 數據讀取邏輯（待啟用）
   useEffect(() => {
-    // const loadProjectData = async () => {
-    //   try {
-    //     setLoading(true);
-    //     const data = await fetchProjectData(id);
-    //     setProjectData(data);
-    //   } catch (err) {
-    //     setError(err.message);
-    //   } finally {
-    //     setLoading(false);
-    //   }
-    // };
-    // loadProjectData();
+    const loadProjectData = async () => {
+      try {
+        setLoading(true);
+        const [details, timeline] = await Promise.all([
+          getProjectDetails(id),
+          getProjectTimelineData(id)
+        ]);
+        setProjectData(details);
+        setTimelineData(timeline);
+      } catch (err) {
+        setError(err.message);
+        console.error('獲取專案資料失敗:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProjectData();
   }, [id]);
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-8 py-12 text-center">
+        <p>載入中...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-8 py-12 text-center text-red-600">
+        <p>錯誤：{error}</p>
+      </div>
+    );
+  }
+
+  if (!projectData) {
+    return (
+      <div className="container mx-auto px-8 py-12 text-center">
+        <p>找不到專案資料</p>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-8 py-12">
@@ -86,8 +154,8 @@ const ProjectDetailPage = () => {
           {/* 專案圖片 */}
           <div className="rounded-lg overflow-hidden shadow-lg mb-6">
             <img
-              src="https://picsum.photos/800/600"
-              alt="專案圖片"
+              src={projectData.image}
+              alt={projectData.title}
               className="w-full h-[400px] object-cover"
             />
           </div>
@@ -96,13 +164,13 @@ const ProjectDetailPage = () => {
           <div className="mb-6">
             <div className="flex items-center gap-4 mb-2">
               <span className="inline-block bg-[#00AA9F]/10 text-[#00AA9F] px-3 py-1 rounded-full text-sm">
-                #設計
+                #{projectData.category}
               </span>
               <span className="text-gray-500 text-sm">
-                提案人：Author Name
+                提案人：{projectData.author.name}
               </span>
             </div>
-            <h1 className="text-3xl font-bold">募資商品名稱</h1>
+            <h1 className="text-3xl font-bold">{projectData.title}</h1>
           </div>
 
           {/* 按鈕組 */}
@@ -146,7 +214,7 @@ const ProjectDetailPage = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-gray-600">募資進度</p>
-              <p className="text-2xl font-bold text-[#00AA9F]">75%</p>
+              <p className="text-2xl font-bold text-[#00AA9F]">{projectData.progress}%</p>
             </div>
             <div className="w-24 h-24 relative">
               <svg className="w-full h-full" viewBox="0 0 36 36">
@@ -165,30 +233,30 @@ const ProjectDetailPage = () => {
                   fill="none"
                   stroke="#00AA9F"
                   strokeWidth="3"
-                  strokeDasharray="75, 100"
+                  strokeDasharray={`${projectData.progress}, 100`}
                 />
               </svg>
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-lg font-bold text-[#00AA9F]">
-                75%
+                {projectData.progress}%
               </div>
             </div>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-gray-600">目標金額</span>
-              <span className="font-medium">100,000 ETH</span>
+              <span className="font-medium">{projectData.targetAmount.toLocaleString()} USDT</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">已募金額</span>
-              <span className="font-medium text-[#00AA9F]">75,000 ETH</span>
+              <span className="font-medium text-[#00AA9F]">{projectData.currentAmount.toLocaleString()} USDT</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">剩餘時間</span>
-              <span className="font-medium">3 天</span>
+              <span className="text-gray-600">結束時間</span>
+              <span className="font-medium">{new Date(projectData.endTime).toLocaleDateString()}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">贊助人數</span>
-              <span className="font-medium">200 人</span>
+              <span className="font-medium">{projectData.backerCount.toLocaleString()} 人</span>
             </div>
           </div>
         </div>
@@ -198,7 +266,7 @@ const ProjectDetailPage = () => {
           <h3 className="text-lg font-medium mb-4">募資時間軸</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockTimeData}>
+              <AreaChart data={timelineData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
@@ -250,34 +318,34 @@ const ProjectDetailPage = () => {
           <div className="p-8">
             {activeTab === 'description' && (
               <div className="prose max-w-none">
-                <p className="text-gray-600 leading-relaxed">
-                  dMart 是一個去中心化的群眾募資平台，我們致力於為創作者和支持者建立一個安全、透明的募資環境。透過區塊鏈技術，我們確保每一筆贊助都被完整記錄且無法竄改，讓創作者能夠專注於實現夢想，而支持者也能安心參與支持喜愛的專案。
-                </p>
-                <p className="text-gray-600 leading-relaxed mt-4">
-                  在這裡，每個專案都代表著一個獨特的創意和夢想。我們提供完整的專案展示功能，包括詳細的專案說明、募資進度追蹤、更新動態分享等。同時，智能合約的應用確保資金的安全管理，只有在達到專案目標時，資金才會轉給創作者，為雙方提供最大的保障。
-                </p>
-                <p className="text-gray-600 leading-relaxed mt-4">
-                  加入 dMart，成為實現夢想的一份子。無論您是懷抱創意的創作者，還是願意支持創意的贊助者，都能在這裡找到屬於自己的位置。讓我們一起，用區塊鏈技術的創新，為創意募資開啟新的可能。
+                <p className="text-gray-600 leading-relaxed whitespace-pre-line">
+                  {projectData.description}
                 </p>
               </div>
             )}
             {activeTab === 'updates' && (
               <div className="space-y-6">
-                <div className="border-b pb-6">
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="font-medium">最新進度報告</h3>
-                    <span className="text-sm text-gray-500">2024-01-03</span>
+                {projectData.updates.map(update => (
+                  <div key={update.id} className="border-b pb-6">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="font-medium">{update.title}</h3>
+                      <span className="text-sm text-gray-500">
+                        {new Date(update.date).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-gray-600">{update.content}</p>
                   </div>
-                  <p className="text-gray-600">專案最新進度更新內容...</p>
-                </div>
+                ))}
               </div>
             )}
             {activeTab === 'faq' && (
               <div className="space-y-6">
-                <div className="border-b pb-6">
-                  <h3 className="font-medium mb-2">常見問題 1</h3>
-                  <p className="text-gray-600">問題回答內容...</p>
-                </div>
+                {projectData.faqs.map(faq => (
+                  <div key={faq.id} className="border-b pb-6">
+                    <h3 className="font-medium mb-2">{faq.question}</h3>
+                    <p className="text-gray-600">{faq.answer}</p>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -287,19 +355,23 @@ const ProjectDetailPage = () => {
         <div className="space-y-4">
           <h2 className="text-2xl font-bold">回饋方案</h2>
           <div className="grid gap-4">
-            <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-xl font-medium mb-2">回饋方案 A</h3>
-                  <p className="text-[#00AA9F] text-2xl font-bold">1,000 ETH</p>
+            {projectData.plans.map(plan => (
+              <div key={plan.id} className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-medium mb-2">{plan.title}</h3>
+                    <p className="text-[#00AA9F] text-2xl font-bold">{plan.price.toLocaleString()} USDT</p>
+                  </div>
+                  <span className="text-gray-500">
+                    剩餘 {plan.remainingQuantity}/{plan.limitedQuantity}
+                  </span>
                 </div>
-                <span className="text-gray-500">剩餘 50/100</span>
+                <p className="text-gray-600 mb-4">{plan.description}</p>
+                <div className="text-sm text-gray-500">
+                  預計出貨時間：{plan.estimatedDelivery}
+                </div>
               </div>
-              <p className="text-gray-600 mb-4">回饋內容描述...</p>
-              <div className="text-sm text-gray-500">
-                預計出貨時間：2024 年 12 月
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -307,17 +379,17 @@ const ProjectDetailPage = () => {
         <div className="bg-white p-6 rounded-lg shadow-md">
           <div className="flex items-center gap-4 mb-4">
             <img
-              src="https://picsum.photos/50/50"
-              alt="提案人頭像"
+              src={projectData.author.avatar}
+              alt={projectData.author.name}
               className="w-12 h-12 rounded-full"
             />
             <div>
-              <h3 className="font-medium">Author Name</h3>
-              <p className="text-gray-500 text-sm">提案人</p>
+              <h3 className="font-medium">{projectData.author.name}</h3>
+              <p className="text-gray-500 text-sm">{projectData.author.address}</p>
             </div>
           </div>
           <p className="text-gray-600">
-            創作者簡介...
+            {projectData.author.description}
           </p>
         </div>
       </div>
@@ -326,7 +398,7 @@ const ProjectDetailPage = () => {
       <DonateModal
         isOpen={isDonateModalOpen}
         onClose={() => setIsDonateModalOpen(false)}
-        projectTitle="募資商品名稱"
+        projectTitle={projectData?.title}
       />
     </div>
   );
