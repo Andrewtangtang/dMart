@@ -1,9 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-const DonateModal = ({ isOpen, onClose, projectTitle }) => {
+// TODO: 這個函數將來要改為實際從智能合約獲取回饋內容
+const getBenefits = async (contractAddress) => {
+  
+  console.log(`從合約 ${contractAddress} 獲取方案的回饋內容`);
+  
+  // 模擬的回饋內容資料
+  return {
+    basic: [
+      '專案完成後的產品一份',
+      '專屬贊助者感謝卡',
+      '提前體驗權限'
+    ],
+    advanced: [
+      '專案完成後的產品一份',
+      '專屬贊助者感謝卡',
+      '提前體驗權限',
+      '限量精美週邊商品',
+      '專屬社群討論區權限'
+    ]
+  };
+};
+
+const DonateModal = ({ isOpen, onClose, projectTitle, contractAddress }) => {
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [benefits, setBenefits] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const handleBackgroundClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  useEffect(() => {
+    const loadBenefits = async () => {
+      if (isOpen && contractAddress) {
+        try {
+          const result = await getBenefits(contractAddress);
+          setBenefits(result);
+        } catch (error) {
+          console.error('獲取回饋內容失敗:', error);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadBenefits();
+  }, [isOpen, contractAddress]);
 
   if (!isOpen) return null;
+  if (loading) return <div>載入中...</div>;
 
   const plans = [
     {
@@ -11,11 +59,8 @@ const DonateModal = ({ isOpen, onClose, projectTitle }) => {
       price: 20,
       currency: 'USDT',
       title: '基本贊助方案',
-      benefits: [
-        '專案完成後的產品一份',
-        '專屬贊助者感謝卡',
-        '提前體驗權限'
-      ],
+      planType: 'basic',
+      benefits: benefits?.basic || [],
       estimatedDelivery: '2024 年 6 月'
     },
     {
@@ -23,13 +68,8 @@ const DonateModal = ({ isOpen, onClose, projectTitle }) => {
       price: 40,
       currency: 'USDT',
       title: '進階贊助方案',
-      benefits: [
-        '專案完成後的產品一份',
-        '專屬贊助者感謝卡',
-        '提前體驗權限',
-        '限量精美週邊商品',
-        '專屬社群討論區權限'
-      ],
+      planType: 'advanced',
+      benefits: benefits?.advanced || [],
       estimatedDelivery: '2024 年 6 月'
     }
   ];
@@ -42,7 +82,7 @@ const DonateModal = ({ isOpen, onClose, projectTitle }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleBackgroundClick}>
       <div className="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold text-gray-900">贊助專案</h2>

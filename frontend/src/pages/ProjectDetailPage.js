@@ -1,40 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import DonateModal from '../components/DonateModal';
+import web3Service from '../services/web3Service';
 
-// 獲取專案募資時間軸數據
-const getProjectTimelineData = async (projectId) => {
+// 固定的里程碑階段描述
+const MILESTONE_DESCRIPTIONS = [
+  '研發規劃階段',
+  '原型開發階段',
+  '測試驗證階段',
+  '量產準備階段'
+];
+
+// 獲取用戶參與的專案列表
+const getUserParticipatedProjects = async (address) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
   return [
-    { day: '0', amount: 0 },
-    { day: '5', amount: 25000 },
-    { day: '10', amount: 50000 },
-    { day: '15', amount: 75000 },
-    { day: '20', amount: 100000 },
+    '0x9876...4321',  // 永續時尚設計專案
+    '0x2468...1357'   // 在地小農支持計畫
   ];
 };
 
-// 獲取專案詳細資訊
-const getProjectDetails = async (projectId) => {
-  // TODO: 這裡將來要改為實際從智能合約獲取資料
-  return {
-    id: projectId,
+// 模擬的專案資料
+const MOCK_PROJECTS = {
+  '1': {
+    id: '1',
     title: '創新科技產品開發計畫',
     category: '科技',
     image: 'https://picsum.photos/800/600',
-    author: {
-      address: '0x1234...5678',
-      name: 'John Doe',
-      avatar: 'https://picsum.photos/50/50',
-      description: '資深產品開發者，擁有多年硬體研發經驗。專注於創新科技產品的開發與實現，致力於將創新想法轉化為實際產品。'
-    },
     targetAmount: 100000,
     currentAmount: 75000,
     backerCount: 200,
     endTime: '2024-02-10T00:00:00Z',
-    status: 'active', // 'active' | 'ended'
-    progress: 75,
+    milestone: 2,
+    contractAddress: '0x1234...5678',
     description: `我們正在開發一款革命性的智能產品，結合最新的物聯網技術與人工智慧應用。
     
     這個產品將改變人們的日常生活方式，提供更智能、更便捷的使用體驗。我們的團隊擁有豐富的研發經驗，
@@ -45,72 +43,166 @@ const getProjectDetails = async (projectId) => {
     - 核心技術研發
     - 生產線建置
     - 市場推廣`,
-    
-    updates: [
-      {
-        id: 1,
-        date: '2024-01-03',
-        title: '開發進度更新',
-        content: '我們已完成產品原型的第一階段開發，目前正在進行功能測試...'
-      }
-    ],
-    
-    faqs: [
-      {
-        id: 1,
-        question: '預計什麼時候可以收到產品？',
-        answer: '我們預計在募資結束後 6 個月內完成生產並寄出產品。'
-      },
-      {
-        id: 2,
-        question: '產品保固期限是多久？',
-        answer: '產品保固期為一年，期間內如有品質問題我們將提供免費維修服務。'
-      }
-    ],
-    
     plans: [
       {
         id: 1,
-        price: 1000,
-        title: '超早鳥專案',
+        price: 20,
+        title: '基本方案',
         description: '產品一台 + 專屬贊助者紀念品',
-        limitedQuantity: 100,
-        remainingQuantity: 50,
         estimatedDelivery: '2024-12'
       },
       {
         id: 2,
-        price: 2000,
-        title: '限定版專案',
+        price: 40,
+        title: '進階方案',
         description: '限定版產品一台 + 專屬贊助者紀念品 + 一年延長保固',
-        limitedQuantity: 50,
-        remainingQuantity: 25,
         estimatedDelivery: '2024-12'
       }
     ]
-  };
+  },
+  '2': {
+    id: '2',
+    title: '永續時尚設計專案',
+    category: '時尚',
+    image: 'https://picsum.photos/800/601',
+    targetAmount: 50000,
+    currentAmount: 45000,
+    backerCount: 150,
+    endTime: '2024-03-15T00:00:00Z',
+    milestone: 3,
+    contractAddress: '0x9876...4321',
+    description: `我們致力於開發環保永續的時尚產品，使用可回收材料，
+    減少環境污染，為地球盡一份心力。
+
+    資金將用於：
+    - 環保材料研發
+    - 設計打樣
+    - 生產設備
+    - 通路開發`,
+    plans: [
+      {
+        id: 1,
+        price: 20,
+        title: '基本方案',
+        description: '環保服飾一件 + 感謝卡',
+        estimatedDelivery: '2024-09'
+      },
+      {
+        id: 2,
+        price: 40,
+        title: '進階方案',
+        description: '環保服飾兩件 + 限量環保袋',
+        estimatedDelivery: '2024-09'
+      }
+    ]
+  },
+  '3': {
+    id: '3',
+    title: '在地小農支持計畫',
+    category: '地方創生',
+    image: 'https://picsum.photos/800/602',
+    targetAmount: 30000,
+    currentAmount: 15000,
+    backerCount: 80,
+    endTime: '2024-04-20T00:00:00Z',
+    milestone: 1,
+    contractAddress: '0x2468...1357',
+    description: `支持在地小農，推廣有機農業，
+    建立永續的農業生態系統。
+
+    資金將用於：
+    - 有機認證
+    - 包裝設計
+    - 運銷通路
+    - 農地改良`,
+    plans: [
+      {
+        id: 1,
+        price: 20,
+        title: '基本方案',
+        description: '當季有機蔬果一箱 + 小農故事集',
+        estimatedDelivery: '2024-06'
+      },
+      {
+        id: 2,
+        price: 40,
+        title: '進階方案',
+        description: '每月有機蔬果箱 × 2期 + 小農參訪券',
+        estimatedDelivery: '2024-06'
+      }
+    ]
+  }
+};
+
+// 獲取專案詳細資訊
+const getProjectDetails = async (projectId) => {
+  
+  // 根據 ID 返回對應的專案資料
+  const projectData = MOCK_PROJECTS[projectId];
+  if (!projectData) {
+    throw new Error('找不到專案資料');
+  }
+  return projectData;
 };
 
 const ProjectDetailPage = () => {
   const { id } = useParams();
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [projectData, setProjectData] = useState(null);
-  const [timelineData, setTimelineData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('description');
   const [isDonateModalOpen, setIsDonateModalOpen] = useState(false);
+  const [hasParticipated, setHasParticipated] = useState(false);
+
+  // 靜態的更新和FAQ資料
+  const staticUpdates = [
+    {
+      id: 1,
+      date: '2024/1/3',
+      title: '開發進度更新',
+      content: '我們已完成產品原型的第一階段開發，目前正在進行功能測試。團隊正在努力優化產品性能，確保每個細節都能達到最佳狀態。接下來我們將進入第二階段的開發，專注於...'
+    },
+    {
+      id: 2,
+      date: '2024/1/1',
+      title: '專案啟動公告',
+      content: '感謝各位支持者的關注！我們的專案正式啟動了。在接下來的日子裡，我們會定期發布專案的最新進展，讓大家了解開發的情況...'
+    }
+  ];
+
+  const staticFaqs = [
+    {
+      id: 1,
+      question: '預計什麼時候可以收到產品？',
+      answer: '我們預計在募資結束後 6 個月內完成生產並寄出產品。我們會定期更新生產進度，讓支持者了解最新狀況。'
+    },
+    {
+      id: 2,
+      question: '產品保固期限是多久？',
+      answer: '產品保固期為一年，期間內如有品質問題我們將提供免費維修服務。'
+    },
+    {
+      id: 3,
+      question: '如何追蹤專案進度？',
+      answer: '我們會在專案頁面定期更新開發進度，您也可以追蹤我們的社群媒體，獲得第一手資訊。'
+    }
+  ];
 
   useEffect(() => {
     const loadProjectData = async () => {
       try {
         setLoading(true);
-        const [details, timeline] = await Promise.all([
-          getProjectDetails(id),
-          getProjectTimelineData(id)
-        ]);
+        const details = await getProjectDetails(id);
         setProjectData(details);
-        setTimelineData(timeline);
+
+        // 檢查用戶是否已參與此專案
+        if (web3Service.isConnected()) {
+          const address = web3Service.getCurrentAccount();
+          const participatedAddresses = await getUserParticipatedProjects(address);
+          const isParticipated = participatedAddresses.includes(details.contractAddress);
+          setHasParticipated(isParticipated);
+        }
       } catch (err) {
         setError(err.message);
         console.error('獲取專案資料失敗:', err);
@@ -166,55 +258,56 @@ const ProjectDetailPage = () => {
               <span className="inline-block bg-[#00AA9F]/10 text-[#00AA9F] px-3 py-1 rounded-full text-sm">
                 #{projectData.category}
               </span>
-              <span className="text-gray-500 text-sm">
-                提案人：{projectData.author.name}
-              </span>
             </div>
             <h1 className="text-3xl font-bold">{projectData.title}</h1>
           </div>
 
-          {/* 按鈕組 */}
-          <div className="flex gap-4">
-            <button 
-              className="flex-1 bg-[#FFAD36] text-white py-3 rounded-md hover:bg-[#FF9D16] transition-colors text-lg font-medium"
-              onClick={() => setIsDonateModalOpen(true)}
-            >
-              贊助專案
-            </button>
-            <button 
-              className={`w-16 rounded-md border-2 transition-colors flex items-center justify-center
-                ${isBookmarked 
-                  ? 'bg-[#00AA9F] border-[#00AA9F] text-white' 
-                  : 'border-gray-300 text-gray-400 hover:border-[#00AA9F] hover:text-[#00AA9F]'}`}
-              onClick={() => setIsBookmarked(!isBookmarked)}
-            >
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                className="h-6 w-6" 
-                fill={isBookmarked ? "currentColor" : "none"}
-                viewBox="0 0 24 24" 
-                stroke="currentColor" 
-                strokeWidth={2}
+          {/* 按鈕組 - 根據參與狀態決定是否顯示 */}
+          {!hasParticipated && (
+            <div className="flex gap-4">
+              <button 
+                className="flex-1 bg-[#FFAD36] text-white py-3 rounded-md hover:bg-[#FF9D16] transition-colors text-lg font-medium"
+                onClick={() => setIsDonateModalOpen(true)}
               >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" 
-                />
-              </svg>
-            </button>
-          </div>
+                贊助專案
+              </button>
+              <button 
+                className={`w-16 rounded-md border-2 transition-colors flex items-center justify-center
+                  ${isBookmarked 
+                    ? 'bg-[#00AA9F] border-[#00AA9F] text-white' 
+                    : 'border-gray-300 text-gray-400 hover:border-[#00AA9F] hover:text-[#00AA9F]'}`}
+                onClick={() => setIsBookmarked(!isBookmarked)}
+              >
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  className="h-6 w-6" 
+                  fill={isBookmarked ? "currentColor" : "none"}
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor" 
+                  strokeWidth={2}
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" 
+                  />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 下方區塊：進度和圖表 */}
+      {/* 下方區塊：進度和內容 */}
       <div className="max-w-4xl mx-auto grid grid-cols-1 gap-6">
-        {/* 募資進度圓環 */}
+        {/* 募資進度圓環和里程碑 */}
         <div className="bg-white p-6 rounded-lg shadow-md">
           <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-gray-600">募資進度</p>
-              <p className="text-2xl font-bold text-[#00AA9F]">{projectData.progress}%</p>
+              <p className="text-2xl font-bold text-[#00AA9F]">
+                {Math.round((projectData.currentAmount / projectData.targetAmount) * 100)}%
+              </p>
             </div>
             <div className="w-24 h-24 relative">
               <svg className="w-full h-full" viewBox="0 0 36 36">
@@ -233,14 +326,55 @@ const ProjectDetailPage = () => {
                   fill="none"
                   stroke="#00AA9F"
                   strokeWidth="3"
-                  strokeDasharray={`${projectData.progress}, 100`}
+                  strokeDasharray={`${Math.round((projectData.currentAmount / projectData.targetAmount) * 100)}, 100`}
                 />
               </svg>
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-lg font-bold text-[#00AA9F]">
-                {projectData.progress}%
+                {Math.round((projectData.currentAmount / projectData.targetAmount) * 100)}%
               </div>
             </div>
           </div>
+
+          {/* 里程碑進度 */}
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-2">
+              <p className="text-gray-600">研發里程碑</p>
+              <p className="text-sm font-medium text-[#00AA9F]">
+                階段 {projectData.milestone + 1}
+              </p>
+            </div>
+            <div className="relative pt-1">
+              <div className="flex mb-2 items-center justify-between gap-2">
+                {[0, 1, 2, 3].map((stage) => (
+                  <div
+                    key={stage}
+                    className={`flex-1 relative ${
+                      stage <= projectData.milestone ? 'text-[#00AA9F]' : 'text-gray-400'
+                    }`}
+                  >
+                    <div className={`h-1 ${
+                      stage <= projectData.milestone ? 'bg-[#00AA9F]' : 'bg-gray-200'
+                    }`}></div>
+                    <div className={`absolute -top-2 ${
+                      stage === 0 ? 'left-0' : stage === 3 ? 'right-0' : 'left-1/2 transform -translate-x-1/2'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
+                        stage <= projectData.milestone ? 'bg-[#00AA9F]' : 'bg-gray-200'
+                      }`}>
+                        <span className={stage <= projectData.milestone ? 'text-white' : 'text-gray-600'}>
+                          {stage + 1}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-gray-600 mt-2">
+                {MILESTONE_DESCRIPTIONS[projectData.milestone]}
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-gray-600">目標金額</span>
@@ -258,28 +392,6 @@ const ProjectDetailPage = () => {
               <span className="text-gray-600">贊助人數</span>
               <span className="font-medium">{projectData.backerCount.toLocaleString()} 人</span>
             </div>
-          </div>
-        </div>
-
-        {/* 募資時間軸圖表 */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-lg font-medium mb-4">募資時間軸</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timelineData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Area 
-                  type="monotone" 
-                  dataKey="amount" 
-                  stroke="#00AA9F" 
-                  fill="#00AA9F" 
-                  fillOpacity={0.1}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
           </div>
         </div>
 
@@ -325,12 +437,12 @@ const ProjectDetailPage = () => {
             )}
             {activeTab === 'updates' && (
               <div className="space-y-6">
-                {projectData.updates.map(update => (
+                {staticUpdates.map(update => (
                   <div key={update.id} className="border-b pb-6">
                     <div className="flex justify-between items-center mb-2">
                       <h3 className="font-medium">{update.title}</h3>
                       <span className="text-sm text-gray-500">
-                        {new Date(update.date).toLocaleDateString()}
+                        {update.date}
                       </span>
                     </div>
                     <p className="text-gray-600">{update.content}</p>
@@ -340,7 +452,7 @@ const ProjectDetailPage = () => {
             )}
             {activeTab === 'faq' && (
               <div className="space-y-6">
-                {projectData.faqs.map(faq => (
+                {staticFaqs.map(faq => (
                   <div key={faq.id} className="border-b pb-6">
                     <h3 className="font-medium mb-2">{faq.question}</h3>
                     <p className="text-gray-600">{faq.answer}</p>
@@ -360,11 +472,8 @@ const ProjectDetailPage = () => {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="text-xl font-medium mb-2">{plan.title}</h3>
-                    <p className="text-[#00AA9F] text-2xl font-bold">{plan.price.toLocaleString()} USDT</p>
+                    <p className="text-[#00AA9F] text-2xl font-bold">{plan.price} USDT</p>
                   </div>
-                  <span className="text-gray-500">
-                    剩餘 {plan.remainingQuantity}/{plan.limitedQuantity}
-                  </span>
                 </div>
                 <p className="text-gray-600 mb-4">{plan.description}</p>
                 <div className="text-sm text-gray-500">
@@ -374,24 +483,6 @@ const ProjectDetailPage = () => {
             ))}
           </div>
         </div>
-
-        {/* 提案人資訊 */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <div className="flex items-center gap-4 mb-4">
-            <img
-              src={projectData.author.avatar}
-              alt={projectData.author.name}
-              className="w-12 h-12 rounded-full"
-            />
-            <div>
-              <h3 className="font-medium">{projectData.author.name}</h3>
-              <p className="text-gray-500 text-sm">{projectData.author.address}</p>
-            </div>
-          </div>
-          <p className="text-gray-600">
-            {projectData.author.description}
-          </p>
-        </div>
       </div>
 
       {/* 贊助彈窗 */}
@@ -399,6 +490,7 @@ const ProjectDetailPage = () => {
         isOpen={isDonateModalOpen}
         onClose={() => setIsDonateModalOpen(false)}
         projectTitle={projectData?.title}
+        contractAddress={projectData?.contractAddress}
       />
     </div>
   );

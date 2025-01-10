@@ -7,13 +7,16 @@ import web3Service from '../services/web3Service';
 // 獲取用戶資訊
 const getUserProfile = async (address) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
+  const [createdProjects, participatedProjects] = await Promise.all([
+    getUserCreatedProjects(address),
+    getUserParticipatedProjects(address)
+  ]);
+
   return {
     address: address,
-    name: 'John Doe',
-    email: 'john@example.com',
     avatar: 'https://picsum.photos/200',
-    participatedCount: 51,
-    createdCount: 1
+    participatedCount: participatedProjects.length,
+    createdCount: createdProjects.length
   };
 };
 
@@ -24,9 +27,8 @@ const getUserCreatedProjects = async (address) => {
     {
       id: 1,
       title: '創新科技產品開發計畫',
-      author: address,
+      contractAddress: address,
       image: 'https://picsum.photos/400/300',
-      progress: 75,
       currentAmount: 1500,
       targetAmount: 2000,
       category: '科技'
@@ -41,9 +43,8 @@ const getUserParticipatedProjects = async (address) => {
     {
       id: 2,
       title: '永續時尚設計專案',
-      author: '0x9876...4321',
+      contractAddress: '0x9876...4321',
       image: 'https://picsum.photos/400/301',
-      progress: 100,
       currentAmount: 3000,
       targetAmount: 3000,
       category: '時尚'
@@ -51,9 +52,8 @@ const getUserParticipatedProjects = async (address) => {
     {
       id: 3,
       title: '在地小農支持計畫',
-      author: '0x2468...1357',
+      contractAddress: '0x2468...1357',
       image: 'https://picsum.photos/400/302',
-      progress: 90,
       currentAmount: 4500,
       targetAmount: 5000,
       category: '地方創生'
@@ -61,29 +61,11 @@ const getUserParticipatedProjects = async (address) => {
     {
       id: 4,
       title: '藝術展覽募資計畫',
-      author: '0x1357...2468',
+      contractAddress: '0x1357...2468',
       image: 'https://picsum.photos/400/303',
-      progress: 30,
       currentAmount: 600,
       targetAmount: 2000,
       category: '藝術'
-    }
-  ];
-};
-
-// 獲取用戶收藏的專案列表
-const getUserBookmarkedProjects = async (address) => {
-  // TODO: 這裡將來要改為實際從智能合約獲取資料
-  return [
-    {
-      id: 5,
-      title: '教育創新專案',
-      author: '0x8765...4321',
-      image: 'https://picsum.photos/400/304',
-      progress: 45,
-      currentAmount: 900,
-      targetAmount: 2000,
-      category: '教育'
     }
   ];
 };
@@ -94,7 +76,6 @@ const ProfilePage = () => {
   const [userProfile, setUserProfile] = useState(null);
   const [createdProjects, setCreatedProjects] = useState([]);
   const [participatedProjects, setParticipatedProjects] = useState([]);
-  const [bookmarkedProjects, setBookmarkedProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -110,17 +91,15 @@ const ProfilePage = () => {
       
       try {
         setLoading(true);
-        const [profile, created, participated, bookmarked] = await Promise.all([
+        const [profile, created, participated] = await Promise.all([
           getUserProfile(address),
           getUserCreatedProjects(address),
-          getUserParticipatedProjects(address),
-          getUserBookmarkedProjects(address)
+          getUserParticipatedProjects(address)
         ]);
 
         setUserProfile(profile);
         setCreatedProjects(created);
         setParticipatedProjects(participated);
-        setBookmarkedProjects(bookmarked);
       } catch (err) {
         setError(err.message);
         console.error('獲取用戶資料失敗:', err);
@@ -162,7 +141,7 @@ const ProfilePage = () => {
         {/* 左側：用戶資訊 */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-md p-6 space-y-6">
-            {/* 用戶頭像和名稱 */}
+            {/* 用戶頭像 */}
             <div className="text-center">
               <div className="w-32 h-32 mx-auto mb-4">
                 <img
@@ -171,8 +150,6 @@ const ProfilePage = () => {
                   className="w-full h-full rounded-full object-cover"
                 />
               </div>
-              <h2 className="text-xl font-bold">{userProfile.name}</h2>
-              <p className="text-gray-500 text-sm mt-1">{userProfile.email}</p>
             </div>
 
             {/* 用戶錢包地址 */}
@@ -241,18 +218,6 @@ const ProfilePage = () => {
                     {participatedProjects.length}
                   </span>
                 </button>
-                <button
-                  className={`px-8 py-4 text-sm font-medium transition-colors relative
-                    ${activeTab === 'bookmarks' 
-                      ? 'text-[#00AA9F] border-b-2 border-[#00AA9F]' 
-                      : 'text-gray-500 hover:text-[#00AA9F]'}`}
-                  onClick={() => setActiveTab('bookmarks')}
-                >
-                  我收藏的募資
-                  <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                    {bookmarkedProjects.length}
-                  </span>
-                </button>
               </div>
 
               {/* 發起募資按鈕 */}
@@ -271,20 +236,24 @@ const ProfilePage = () => {
           {/* 專案列表 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {activeTab === 'my-projects' && createdProjects.map(project => (
-              <ProjectCard key={project.id} {...project} />
+              <ProjectCard 
+                key={project.id} 
+                {...project} 
+                progress={Math.round((project.currentAmount / project.targetAmount) * 100)}
+              />
             ))}
             {activeTab === 'participated' && participatedProjects.map(project => (
-              <ProjectCard key={project.id} {...project} />
-            ))}
-            {activeTab === 'bookmarks' && bookmarkedProjects.map(project => (
-              <ProjectCard key={project.id} {...project} />
+              <ProjectCard 
+                key={project.id} 
+                {...project} 
+                progress={Math.round((project.currentAmount / project.targetAmount) * 100)}
+              />
             ))}
           </div>
 
           {/* 空狀態 */}
           {((activeTab === 'my-projects' && createdProjects.length === 0) ||
-            (activeTab === 'participated' && participatedProjects.length === 0) ||
-            (activeTab === 'bookmarks' && bookmarkedProjects.length === 0)) && (
+            (activeTab === 'participated' && participatedProjects.length === 0)) && (
             <div className="text-center py-12">
               <div className="text-gray-400 mb-4">
                 <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -294,12 +263,10 @@ const ProfilePage = () => {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 {activeTab === 'my-projects' && '還沒有發起過募資專案'}
                 {activeTab === 'participated' && '還沒有參與過募資專案'}
-                {activeTab === 'bookmarks' && '還沒有收藏的募資專案'}
               </h3>
               <p className="text-gray-500">
                 {activeTab === 'my-projects' && '點擊上方的「發起募資」按鈕來創建您的第一個專案'}
                 {activeTab === 'participated' && '瀏覽首頁發現感興趣的專案並參與募資'}
-                {activeTab === 'bookmarks' && '瀏覽專案時點擊收藏按鈕來保存感興趣的專案'}
               </p>
             </div>
           )}

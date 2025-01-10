@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const ProjectCard = ({ id, title, author, image, progress }) => {
+const ProjectCard = ({ id, title, contractAddress, image, progress }) => {
   const navigate = useNavigate();
 
   const handleClick = () => {
@@ -22,7 +22,7 @@ const ProjectCard = ({ id, title, author, image, progress }) => {
       </div>
       <div className="p-3">
         <h3 className="text-base font-medium mb-1.5 line-clamp-2">{title}</h3>
-        <p className="text-gray-500 text-sm mb-2.5">by {author}</p>
+        <p className="text-gray-500 text-sm mb-2.5">Contract Address: {contractAddress}</p>
         
         {/* Progress Bar */}
         <div className="relative">
