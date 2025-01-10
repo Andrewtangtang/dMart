@@ -1,184 +1,231 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import 'openzeppelin-contracts/contracts/token/ERC20/IERC20.sol';
-import './interfaces/IDMartProject.sol';
-import './DMartERC721.sol';
-import './interfaces/IDMartFactory.sol';
-import './interfaces/IDMartCallee.sol';
-import './interfaces/IAavePool.sol';
+import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import "./interfaces/IAavePool.sol";
 
+/**
+ * DMartProject 代表單一募資專案
+ * - 募資人需先繳交 30% 保證金 (不計入 target 內)
+ * - 實際向投資人募資 100% (target)
+ * - 有四個里程碑 (A, B, C, D)，每個通過投票後釋放 1/4 target 給募資人
+ * - 最後一個里程碑完成時將保證金退還給募資人
+ * - 閒置資金都會存到 Aave 賺取利息
+ * - 透過 DMartProjectAuto 進行投票與自動化
+ */
 contract DMartProject {
-    uint256 public initialized = 1;
+    // 里程碑編號
+    enum MilestoneStatus { NotStarted, InProgress, Completed }
 
-    uint256 public _target;
-    uint256 public _raisedAmount = 0;
-    uint256 public _collateral;
-    bytes4 private constant SELECTOR = bytes4(keccak256(bytes('transfer(address,uint256)')));
+    // 為簡化：里程碑 0 => A, 1 => B, 2 => C, 3 => D
+    struct Milestone {
+        MilestoneStatus status;  
+        string ipfsCid;         // 募資人上傳報告之 IPFS CID
+    }
 
-    address public factory;
-    address public _creator;
-    address public USDT;
-    
-	address public aavePool;			// Aave V3 Pool contract address
-	address public aaveAsset;			// the asset to interact with Aave (USDT)
-	address public aToken;				// the corresponding aToken address
-	address public platformAddress;		// the address to receive a share of interests
+    address public factory;   // 部署本合約的 factory
+    address public creator;   // 募資專案的發起人
+    address public usdt;      // 直接使用 USDT 進行交易與存 Aave
+    address public aavePool;  // Aave Pool
+    address public aToken;    // Aave 中對應的 aToken
+    address public platform;  // 平台地址(可收利息分潤)
 
-	uint256 public stakedInAave;		// the principal staked in Aave
+    uint256 public target;           // 專案目標金額 (投資人需募資的 100%)
+    uint256 public collateral;       // 保證金(30% 的 target)，由募資人額外支付
+    uint256 public totalRaised;      // 已募集的金額(來自投資人)
+    uint256 public stakedInAave;     // 存入 Aave 的本金
 
-    string public _URI;
-    uint256 _pahse = 0;
-    uint256[] _deadlines;
-
-	uint256 public _tiers;
-	uint256[] public _amountsForTiers;
-	address[] public _donators;
-	mapping(address => uint256) _donatorLevel;
-    DMartERC721 public NFT;
+    uint256 public currentMilestone; // 當前里程碑索引 (0~3)
+    Milestone[4] public milestones;  // 四個里程碑
 
     uint256 private unlocked = 1;
     modifier lock() {
-        require(unlocked == 1, 'Locked.');
+        require(unlocked == 1, "Locked.");
         unlocked = 0;
         _;
         unlocked = 1;
     }
 
-    modifier init() {
-        require(initialized == 1, "Initialized.");
-        _;
-        initialized = 2;
-    }
-
-    function _safeTransfer(address token, address to, uint256 value) private {
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(SELECTOR, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TRANSFER_FAILED');
-    }
-
-    event Mint(address indexed sender, uint256 indexed id, string indexed URI);
-    event Burn(address indexed sender, uint256 indexed id, string indexed URI);
-	event AaveDeposit( address indexed caller, uint256 amount );
-	event AaveWithdraw( address indexed caller, uint256 requestedPrincipal, uint256 actualPrincipal, uint256 userInterest, uint256 platformInterest, uint256 totalReceived );
+    // 事件
+    event ProjectInitialized(address indexed creator, uint256 target, uint256 collateral);
+    event MilestoneReportSubmitted(uint256 indexed milestoneIndex, string ipfsCid);
+    event MilestoneFundsReleased(uint256 indexed milestoneIndex, uint256 amount);
+    event NextMilestoneActivated(uint256 indexed milestoneIndex);
 
     constructor() {
-        factory = msg.sender;
+        factory = msg.sender; // factory 部署
     }
 
-    // called once by the factory at time of deployment
-    function initialize(uint256 target, uint256[] memory amountsForTiers, uint256[] memory deadlines, string memory uri) external init {
+    /**
+     * 初始化專案：
+     * - 傳入 target (需要從投資人募資的金額)，
+     * - 募資人需額外提供 30% 的 target 作為保證金
+     * - 並設定 Aave / USDT / aToken / platform 等參數
+     */
+    function initialize(
+        address _creator,
+        address _usdt,
+        address _aavePool,
+        address _aToken,
+        address _platform,
+        uint256 _target
+    ) external {
+        require(msg.sender == factory, "Only factory can initialize");
+        require(target == 0, "Already initialized.");
 
-        _creator = msg.sender;
-        _target = target;
-        _tiers = amountsForTiers.length;
-        for (uint256 i = 0; i < amountsForTiers.length; i++) {
-            _amountsForTiers[i] = amountsForTiers[i];
+        creator   = _creator;
+        usdt      = _usdt;
+        aavePool  = _aavePool;
+        aToken    = _aToken;
+        platform  = _platform;
+        target    = _target;
+
+        // 募資人需繳交 30% (保證金)
+        uint256 _collateral = (_target * 30) / 100;
+        collateral = _collateral;
+
+        // 先從募資人那裡把保證金轉進合約
+        require(IERC20(usdt).balanceOf(creator) >= collateral, "Not enough balance for collateral");
+        IERC20(usdt).transferFrom(creator, address(this), collateral);
+
+        // 全部保證金存入 Aave
+        depositToAave(collateral);
+
+        // 預設：里程碑 A (index=0) 進入進行中
+        milestones[0].status = MilestoneStatus.InProgress;
+        currentMilestone = 0;
+
+        emit ProjectInitialized(creator, target, collateral);
+    }
+
+    /**
+     * 投資人捐款 (donate)，上限為 target (100%)
+     */
+    function donate(uint256 amount) external lock {
+        // 不可超過 target
+        require(totalRaised + amount <= target, "Exceed the max target");
+        require(IERC20(usdt).balanceOf(msg.sender) >= amount, "Donator has not enough balance");
+
+        // 轉入合約
+        IERC20(usdt).transferFrom(msg.sender, address(this), amount);
+
+        // 增加 totalRaised
+        totalRaised += amount;
+
+        // 轉入 Aave 賺利息
+        depositToAave(amount);
+    }
+
+    /**
+     * 募資人上傳里程碑報告(CID)，供後續 Chainlink Auto 監測並進行投票
+     */
+    function submitMilestoneReport(uint256 milestoneIndex, string calldata cid) external {
+        require(msg.sender == creator, "Only creator can submit");
+        require(milestoneIndex == currentMilestone, "Not the current milestone");
+        require(milestones[milestoneIndex].status == MilestoneStatus.InProgress, "Not in progress");
+
+        milestones[milestoneIndex].ipfsCid = cid;
+        emit MilestoneReportSubmitted(milestoneIndex, cid);
+    }
+
+    /**
+     * 由 DMartProjectAuto 在投票結果 Yes 後呼叫，釋放對應里程碑款項
+     * 每個里程碑對應 1/4 的 target
+     * 若是最後里程碑(3)，另加退還保證金給募資人
+     */
+    function releaseMilestoneFunds(uint256 milestoneIndex) external lock {
+        require(msg.sender != address(0), "Invalid caller");
+        require(milestoneIndex == currentMilestone, "Not the current milestone");
+        require(milestones[milestoneIndex].status == MilestoneStatus.InProgress, "Not in progress");
+
+        // 計算要釋放的金額 = target / 4
+        uint256 amountToRelease = target / 4;
+
+        // 如果是最後一個里程碑，額外退還保證金
+        if (milestoneIndex == 3) {
+            amountToRelease += collateral;
         }
 
-        _collateral = _target * 2 / 10 / 10^6 * 10^6; // 20% of target as collateral
+        // 從 Aave 提款 (原則上合約目前有足夠金額)
+        (uint256 actualPrincipal, , ) = withdrawFromAave(amountToRelease);
 
-        for (uint256 i = 0; i < deadlines.length; i++) {
-            _deadlines[i] = deadlines[i];
+        // 撥款給募資人
+        IERC20(usdt).transfer(creator, actualPrincipal);
+
+        // 更新里程碑狀態
+        milestones[milestoneIndex].status = MilestoneStatus.Completed;
+        emit MilestoneFundsReleased(milestoneIndex, actualPrincipal);
+
+        // 若不是最後一個里程碑，進入下一階段
+        if (milestoneIndex < 3) {
+            currentMilestone = milestoneIndex + 1;
+            milestones[currentMilestone].status = MilestoneStatus.InProgress;
+            emit NextMilestoneActivated(currentMilestone);
         }
-        
-        _URI = uri; // store fundrasing details on IPFS
-        // https://gateway.pinata.cloud/ipfs/bafybeiekch6rekndqmmmcbpujbk3nptcwbc3lih3pcvc4hcbdeogtv5wru
-        
-        NFT = new DMartERC721("DMartNFT","DMartNFT");
-
-        uint256 balance = IERC20(USDT).balanceOf(address(_creator));
-        require( balance >= _collateral , "Not enough balance to create a projet." );
-        IERC20(USDT).transferFrom(_creator, address(this), _collateral);
-
-        depositToAave(_collateral);
     }
 
-    function donate(uint256 tier) external returns(uint256) {
-        require(tier < _tiers, "The donating tier doesn't exit");
-        uint256 fund = _amountsForTiers[tier];
-        _donators.push(msg.sender);
-        _donatorLevel[msg.sender] = tier;
-        _raisedAmount += fund;
+    // === Aave 存款 & 提款邏輯 ===
+    function depositToAave(uint256 amount) internal {
+        require(aavePool != address(0), "Aave config not set");
+        uint256 balance = IERC20(usdt).balanceOf(address(this));
+        require(balance >= amount, "Not enough to deposit to Aave");
 
-        uint256 balance = IERC20(USDT).balanceOf(msg.sender);
-        require( balance >= fund , "Not enough balance to donate." );
-        IERC20(USDT).transferFrom(msg.sender, address(this), fund);
-        depositToAave(fund);
-    }
+        IERC20(usdt).approve(aavePool, amount);
+        IAavePool(aavePool).supply(usdt, amount, address(this), 0);
 
-    function getFundraisingTarget() public view returns(uint256) {
-        return _target;
-    }
-
-    function getRaisedAmount() public view returns(uint256) {
-        return _raisedAmount;
-    }
-
-    function getPhase() public view returns(uint256) {
-        return _pahse;
-    }
-
-	// Aave V3
-	function setAaveConfig( address _aavePool, address _aaveAsset, address _aToken, address _platform ) external{
-        require( msg.sender == factory, "Only factory can set Aave config." );
-        aavePool = _aavePool;
-        aaveAsset = _aaveAsset;
-        aToken = _aToken;
-        platformAddress = _platform;
-	}
-
-	function getAaveBalance() public view returns (uint256){
-        return ( IERC20( aToken ).balanceOf( address( this ) ) );
-	}
-
-	function depositToAave( uint256 amount ) public lock{
-        require( ( aavePool != address(0) ) && ( aaveAsset != address(0) ), "Aave config not set." );
-
-        // make sure we have enough balance in the contract
-        uint256 balance = IERC20( aaveAsset ).balanceOf( address( this ) );
-        require( ( balance >= amount ), "Not enough balance to deposit." );
-
-        // approve Aave Pool
-        IERC20( aaveAsset ).approve( aavePool, amount );
-
-        IAavePool( aavePool ).supply( aaveAsset, amount, address( this ), 0 );
-
-        // update the record of the staked asset
         stakedInAave += amount;
+    }
 
-        emit AaveDeposit( msg.sender, amount );
-	}
+    // 從 Aave 依比例提領
+    function withdrawFromAave(uint256 principal)
+        internal
+        returns (uint256 actualPrincipal, uint256 userInterest, uint256 platformInterest)
+    {
+        require(aavePool != address(0), "Aave config not set");
+        require(principal > 0, "Principal must > 0");
+        require(principal <= stakedInAave, "Not enough staked principal");
 
-	function withdrawFromAave( uint256 principal ) external lock returns ( uint256 actualPrincipal, uint256 userInterest, uint256 platformInterest ){
-        require( ( aavePool != address(0) ) && ( aaveAsset != address(0) ), "Aave config not set." );
+        // 先計算合約目前可贖回多少 aToken
+        uint256 totalRedeemable = IERC20(aToken).balanceOf(address(this));
+        // 以 (principal / stakedInAave) 算出比例
+        uint256 ratio = (principal * 1e18) / stakedInAave;
+        uint256 toWithdraw = (totalRedeemable * ratio) / 1e18;
 
-        require( principal > 0, "Principal must > 0." );
-        require( principal <= stakedInAave, "Not enough staked principal in Aave." );
+        uint256 actualReceived = IAavePool(aavePool).withdraw(usdt, toWithdraw, address(this));
 
-        uint256 totalRedeemable = getAaveBalance();
-        uint256 ratio = ( principal * 1e18 ) / stakedInAave;
-        uint256 toWithdraw = ( totalRedeemable * ratio ) / 1e18;
-
-        uint256 actualReceived = IAavePool( aavePool ).withdraw( aaveAsset, toWithdraw, address( this ) );
-
-        if( actualReceived > principal ){
+        if (actualReceived > principal) {
             uint256 interest = actualReceived - principal;
-            platformInterest = interest / 2;
+            platformInterest = interest / 2; // 平台收一半利息
             userInterest = interest - platformInterest;
             actualPrincipal = principal;
 
-            // distributing the interests
-            if( userInterest > 0 ) _safeTransfer( aaveAsset, msg.sender, userInterest );
-            if( platformInterest > 0 ) _safeTransfer( aaveAsset, platformAddress, platformInterest );
-        }
-        else{
-                actualPrincipal = actualReceived;
-                userInterest = platformInterest = 0;
+            // 分利息(此處以募資人為使用者)
+            if (userInterest > 0) {
+                IERC20(usdt).transfer(creator, userInterest);
+            }
+            if (platformInterest > 0 && platform != address(0)) {
+                IERC20(usdt).transfer(platform, platformInterest);
+            }
+        } else {
+            // 沒有利息
+            actualPrincipal = actualReceived;
+            userInterest = 0;
+            platformInterest = 0;
         }
 
+        // 更新合約內的本金記錄
         stakedInAave -= principal;
 
-        emit AaveWithdraw( msg.sender, principal, actualPrincipal, userInterest, platformInterest, actualReceived );
-        return ( actualPrincipal, userInterest, platformInterest );
-	}
+        return (actualPrincipal, userInterest, platformInterest);
+    }
+
+    // 輔助查詢
+    function getMilestone(uint256 index)
+        external
+        view
+        returns (MilestoneStatus status, string memory cid)
+    {
+        Milestone memory m = milestones[index];
+        return (m.status, m.ipfsCid);
+    }
 }

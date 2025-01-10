@@ -1,281 +1,220 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.7;
+pragma solidity ^0.8.0;
 
-/**
- * 依賴Chainlink:
- *    "KeeperCompatibleInterface"  => checkUpkeep/performUpkeep
- *    "ChainlinkClient" => sendChainlinkRequestTo + recordChainlinkFulfillment
- */
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
-
 import "@chainlink/contracts/src/v0.8/ConfirmedOwner.sol";
 
 /**
- * @dev 
- *   - NFT投票(Off-chain Snapshot,三選: Yes/No/Incomplete)
- *   - 由 Chainlink Automation 週期檢查 => 
- *       a) 創建投票
- *       b) 結束時抓取投票結果
- *   - 透過 Chainlink Any-API (sendChainlinkRequestTo) 與External Adapter溝通
+ * DMartProjectAuto
+ * 依賴 Chainlink 進行:
+ *   - KeeperCompatibleInterface => checkUpkeep/performUpkeep (自動偵測 CREATE / FINALIZE)
+ *   - ChainlinkClient => sendChainlinkRequestTo + recordChainlinkFulfillment (Any-API)
+ *
+ * 假設:
+ *   - 每個里程碑都需要發起投票，投票通過後才釋放該里程碑對應的款項
+ *   - 最後里程碑釋放時會連同保證金一併退還給募資人 (邏輯已在 DMartProject 中實作)
  */
-contract DMartAutoVoteFull is ChainlinkClient, KeeperCompatibleInterface, ConfirmedOwner {
 
+interface IDMartProject {
+    function currentMilestone() external view returns (uint256);
+    function submitMilestoneReport(uint256 milestoneIndex, string calldata cid) external;
+    function releaseMilestoneFunds(uint256 milestoneIndex) external;
+}
+
+contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, ConfirmedOwner {
     using Chainlink for Chainlink.Request;
 
-    // --------------------------
-    // 參數 & 結構
-    // --------------------------
-    enum VoteOutcome { Undecided, Yes, No, Incomplete }
+    enum VoteOutcome { Undecided, Yes, No }
 
-    enum MilestoneStatus { NotStarted, VotingOpen, VotingEnded }
+    enum MilestoneAutoStatus { Idle, VotingOpen, VotingEnded }
 
-    struct Milestone {
-        string ipfsHash;          // 報告
-        uint startTime;           // 投票開始時間
-        uint endTime;             // 投票結束時間
-        MilestoneStatus status;
-        bytes32 proposalId;       // snapshot proposalId
+    struct MilestoneAuto {
+        MilestoneAutoStatus status;
+        bytes32 proposalId; // snapshot proposalId
         VoteOutcome outcome;
-        bool executed;            // 是否執行後續動作(釋放funds etc)
+        bool executed;      // 是否已針對結果執行(撥款或不撥款)
     }
 
-    // 里程碑列表
-    mapping(uint => Milestone) public milestones;
-    uint public totalMilestones;
+    // 這裡假設每個專案固定 4 個里程碑 => [0,1,2,3]
+    mapping(uint256 => MilestoneAuto) public milestoneAutos;
 
-    // Chainlink Any-API
-    address public oracleAddress;     // oracle address
-    bytes32 public jobIdCreate;       // job id for create proposal
-    bytes32 public jobIdResult;       // job id for get result
-    uint256 public fee;               // link fee
+    // 針對此合約需要的 Chainlink Any-API 參數
+    address public oracle;
+    bytes32 public jobIdCreate;       // create proposal
+    bytes32 public jobIdResult;       // get proposal result
+    uint256 public fee;
 
-    // =========== events ===========
-    event MilestoneCreated(uint indexed index, string ipfsHash, uint start, uint end);
-    event UpkeepAction(uint indexed index, string action); // e.g. "CREATE", "FINALIZE"
-    event RequestCreateProposalSent(bytes32 indexed requestId, uint milestoneIndex);
-    event FulfillCreateProposal(bytes32 indexed requestId, uint milestoneIndex, bytes32 proposalId);
-    event RequestGetResultSent(bytes32 indexed requestId, uint milestoneIndex);
-    event FulfillGetProposalResult(bytes32 indexed requestId, uint milestoneIndex, uint yes, uint no, uint incomplete);
+    // 綁定 DMartProject
+    IDMartProject public project;
 
-    event VotingExecuted(uint indexed milestoneIndex, VoteOutcome outcome);
+    // events
+    event UpkeepAction(uint indexed milestoneIndex, string action);
+    event RequestCreateProposalSent(uint256 indexed milestoneIndex, bytes32 indexed requestId);
+    event RequestGetResultSent(uint256 indexed milestoneIndex, bytes32 indexed requestId);
 
     constructor(
+        address _project,
         address _linkToken,
         address _oracle,
         bytes32 _jobIdCreate,
         bytes32 _jobIdResult,
         uint256 _fee
-    )
-        ConfirmedOwner(msg.sender)
-    {
-        // ChainlinkClient
+    ) ConfirmedOwner(msg.sender) {
+        // Chainlink Client
         setChainlinkToken(_linkToken);
 
-        // set config
-        oracleAddress = _oracle;
+        project = IDMartProject(_project);
+        oracle = _oracle;
         jobIdCreate = _jobIdCreate;
         jobIdResult = _jobIdResult;
         fee = _fee;
     }
 
+    // ============== KeeperCompatibleInterface ==============
     /**
-     * @dev 設置新的 oracle or jobid
+     * checkUpkeep:
+     *   1) 如果 status = Idle => CREATE
+     *   2) 如果 status = VotingOpen => FINALIZE
+     *
+     * 真實情況應加入更多時間/條件判斷，此處簡化
      */
-    function setOracleJob(
-        address _oracle, 
-        bytes32 _createId, 
-        bytes32 _resultId, 
-        uint256 _newFee
-    ) external onlyOwner {
-        oracleAddress = _oracle;
-        jobIdCreate = _createId;
-        jobIdResult = _resultId;
-        fee = _newFee;
-    }
+    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+        uint256 mIndex = project.currentMilestone();
+        MilestoneAuto memory ma = milestoneAutos[mIndex];
 
-    /**
-     * @dev 初始化某個里程碑
-     */
-    function initMilestone(
-        uint index,
-        string calldata ipfsHash,
-        uint startTime,
-        uint endTime
-    ) external onlyOwner {
-        Milestone storage m = milestones[index];
-        require(m.status == MilestoneStatus.NotStarted && m.proposalId == bytes32(0), "Already init? or used?");
-        m.ipfsHash = ipfsHash;
-        m.startTime = startTime;
-        m.endTime   = endTime;
-        m.status    = MilestoneStatus.NotStarted;
-        m.outcome   = VoteOutcome.Undecided;
-        m.executed  = false;
-        if (index >= totalMilestones) {
-            totalMilestones = index + 1;
+        // 若是 Idle => 表示該里程碑可發起投票
+        if (ma.status == MilestoneAutoStatus.Idle) {
+            upkeepNeeded = true;
+            performData = abi.encode(mIndex, "CREATE");
+            return (upkeepNeeded, performData);
         }
-        emit MilestoneCreated(index, ipfsHash, startTime, endTime);
-    }
 
-    // --------------- KeeperCompatible ---------------
-    /**
-     * @dev Keeper nodes週期呼叫 => 檢查是否需要 "CREATE" or "FINALIZE"
-     */
-    function checkUpkeep(bytes calldata /* checkData */) external view override 
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
-        // 從 0 ~ totalMilestones 找
-        for (uint i = 0; i < totalMilestones; i++){
-            Milestone memory m = milestones[i];
-            if (m.status == MilestoneStatus.NotStarted && block.timestamp >= m.startTime){
-                // need CREATE
-                return (true, abi.encode(i, "CREATE"));
-            }
-            if (m.status == MilestoneStatus.VotingOpen && block.timestamp >= m.endTime){
-                // need FINALIZE
-                return (true, abi.encode(i, "FINALIZE"));
-            }
+        // 若是 VotingOpen => 表示該里程碑可結算投票
+        if (ma.status == MilestoneAutoStatus.VotingOpen) {
+            upkeepNeeded = true;
+            performData = abi.encode(mIndex, "FINALIZE");
+            return (upkeepNeeded, performData);
         }
+
         return (false, bytes(""));
     }
 
-    /**
-     * @dev Keeper nodes若 checkUpkeep =true => 呼叫 performUpkeep(performData)
-     *   - decode (index, action)
-     *   - action="CREATE" => requestCreateProposal
-     *   - action="FINALIZE" => requestGetProposalResult
-     */
     function performUpkeep(bytes calldata performData) external override {
-        (uint index, string memory action) = abi.decode(performData, (uint, string));
-        emit UpkeepAction(index, action);
+        (uint256 milestoneIndex, string memory action) = abi.decode(performData, (uint256, string));
+        emit UpkeepAction(milestoneIndex, action);
 
-        Milestone storage m = milestones[index];
-        if ( keccak256(bytes(action)) == keccak256("CREATE") ){
-            // create
-            require(m.status == MilestoneStatus.NotStarted, "Invalid status for CREATE");
-            requestCreateProposal(index);
-        }
-        else if ( keccak256(bytes(action)) == keccak256("FINALIZE") ){
-            require(m.status == MilestoneStatus.VotingOpen, "Invalid status for FINALIZE");
-            requestGetProposalResult(index);
+        if (keccak256(bytes(action)) == keccak256("CREATE")) {
+            requestCreateProposal(milestoneIndex);
+        } else if (keccak256(bytes(action)) == keccak256("FINALIZE")) {
+            requestGetProposalResult(milestoneIndex);
         }
     }
 
-    // --------------- Any-API: create snapshot proposal ---------------
-    /**
-     * @dev 構建Chainlink.Request => 交由 Node => Node對Snapshot API => create proposal => callback fulfill
-     */
-    function requestCreateProposal(uint milestoneIndex) internal {
-        Milestone storage m = milestones[milestoneIndex];
-        // update status
-        m.status = MilestoneStatus.VotingOpen;
+    // ============== Chainlink Any-API: create proposal  ==============
+    function requestCreateProposal(uint256 mIndex) internal {
+        MilestoneAuto storage ma = milestoneAutos[mIndex];
+        require(ma.status == MilestoneAutoStatus.Idle, "Wrong status");
+        ma.status = MilestoneAutoStatus.VotingOpen;
+        ma.outcome = VoteOutcome.Undecided;
 
-        Chainlink.Request memory req = buildChainlinkRequest(jobIdCreate, address(this), this.fulfillCreateProposal.selector);
-        // 你想傳遞到 external adapter 的資料:
-        req.addUint("milestoneIndex", milestoneIndex);
-        req.add("ipfsHash", m.ipfsHash);
+        Chainlink.Request memory req = buildChainlinkRequest(
+            jobIdCreate, 
+            address(this), 
+            this.fulfillCreateProposal.selector
+        );
 
-        // 三選: 你可以用 adapter 內固定 or req.add("options","[YES,NO,INCOMPLETE]") etc
+        // 傳遞參數給 External Adapter
+        req.addUint("milestoneIndex", mIndex);
+        // ... 其他需要的資料 (如 IPFS CID, 里程碑描述, etc)
 
-        bytes32 requestId = sendChainlinkRequestTo(oracleAddress, req, fee);
-        emit RequestCreateProposalSent(requestId, milestoneIndex);
+        bytes32 requestId = sendChainlinkRequestTo(oracle, req, fee);
+        emit RequestCreateProposalSent(mIndex, requestId);
     }
 
-    /**
-     * @dev callback: Node adapter會把 proposalId傳回
-     */
-    function fulfillCreateProposal(bytes32 _requestId, uint256 milestoneIdx, bytes32 _proposalId)
+    // callback
+    function fulfillCreateProposal(bytes32 _requestId, uint256 milestoneIdx, bytes32 proposalId)
         public
         recordChainlinkFulfillment(_requestId)
     {
-        Milestone storage m = milestones[milestoneIdx];
-        require(m.status == MilestoneStatus.VotingOpen, "Not in VotingOpen?");
-
-        m.proposalId = _proposalId;
-        // 事件
-        emit FulfillCreateProposal(_requestId, milestoneIdx, _proposalId);
+        MilestoneAuto storage ma = milestoneAutos[milestoneIdx];
+        require(ma.status == MilestoneAutoStatus.VotingOpen, "Not in VotingOpen");
+        ma.proposalId = proposalId;
+        // 其他邏輯
     }
 
-    // --------------- Any-API: get snapshot result ---------------
-    /**
-     * @dev 取得投票結果 => yes/no/incomplete
-     */
-    function requestGetProposalResult(uint milestoneIndex) internal {
-        Milestone storage m = milestones[milestoneIndex];
-        require(m.proposalId != bytes32(0), "No proposalId");
-        require(m.status == MilestoneStatus.VotingOpen && !m.executed, "Already done or invalid status");
+    // ============== Chainlink Any-API: get proposal result  ==============
+    function requestGetProposalResult(uint256 mIndex) internal {
+        MilestoneAuto storage ma = milestoneAutos[mIndex];
+        require(ma.status == MilestoneAutoStatus.VotingOpen, "Wrong status");
+        require(ma.proposalId != bytes32(0), "No proposalId");
 
-        Chainlink.Request memory req = buildChainlinkRequest(jobIdResult, address(this), this.fulfillGetProposalResult.selector);
-        req.addUint("milestoneIndex", milestoneIndex);
-        // adapter可用 proposalId找出投票 => yes/no/incomplete
-        req.addBytes32("proposalId", m.proposalId);
+        Chainlink.Request memory req = buildChainlinkRequest(
+            jobIdResult,
+            address(this),
+            this.fulfillGetProposalResult.selector
+        );
 
-        bytes32 requestId = sendChainlinkRequestTo(oracleAddress, req, fee);
-        emit RequestGetResultSent(requestId, milestoneIndex);
+        req.addUint("milestoneIndex", mIndex);
+        req.addBytes32("proposalId", ma.proposalId);
+
+        bytes32 requestId = sendChainlinkRequestTo(oracle, req, fee);
+        emit RequestGetResultSent(mIndex, requestId);
     }
 
-    /**
-     * @dev callback: Node adapter會回傳 (yesCount, noCount, incompleteCount)
-     */
+    // callback: Node adapter 會回傳 yes/no 投票數
     function fulfillGetProposalResult(
         bytes32 _requestId,
         uint256 milestoneIdx,
         uint256 yesCount,
-        uint256 noCount,
-        uint256 incompleteCount
-    )
-        public
-        recordChainlinkFulfillment(_requestId)
-    {
-        Milestone storage m = milestones[milestoneIdx];
-        require(m.status == MilestoneStatus.VotingOpen && !m.executed, "Cannot finalize again");
+        uint256 noCount
+    ) public recordChainlinkFulfillment(_requestId) {
+        MilestoneAuto storage ma = milestoneAutos[milestoneIdx];
+        require(ma.status == MilestoneAutoStatus.VotingOpen, "Not in VotingOpen");
 
-        emit FulfillGetProposalResult(_requestId, milestoneIdx, yesCount, noCount, incompleteCount);
-
-        // 決定 outcome
-        VoteOutcome outcome;
-        if (yesCount >= noCount && yesCount >= incompleteCount){
-            outcome = VoteOutcome.Yes;
-        } else if (noCount >= yesCount && noCount >= incompleteCount){
-            outcome = VoteOutcome.No;
+        // 判定結果
+        if (yesCount >= noCount) {
+            ma.outcome = VoteOutcome.Yes;
         } else {
-            outcome = VoteOutcome.Incomplete;
+            ma.outcome = VoteOutcome.No;
         }
 
-        m.outcome = outcome;
-        m.status = MilestoneStatus.VotingEnded;
-        m.executed = true;
-
-        // 進行後續動作
-        _executeVotingOutcome(milestoneIdx, outcome);
+        ma.status = MilestoneAutoStatus.VotingEnded;
+        ma.executed = false; // 等待後續執行
+        // 執行後續動作
+        _executeVotingOutcome(milestoneIdx);
     }
 
-    /**
-     * @dev 依投票結果(Yes/No/Incomplete)執行
-     */
-    function _executeVotingOutcome(uint milestoneIdx, VoteOutcome outcome) internal {
-        // e.g. if yes => 釋放funds, if no => refund or kill project, if incomplete => require re-report
-        // 這裡示範:
-        if (outcome == VoteOutcome.Yes) {
-            // ex: releaseFundsToOwner( ... )
+    function _executeVotingOutcome(uint256 milestoneIdx) internal {
+        MilestoneAuto storage ma = milestoneAutos[milestoneIdx];
+        require(ma.status == MilestoneAutoStatus.VotingEnded, "Not ended yet");
+        require(!ma.executed, "Already executed");
+        ma.executed = true;
+
+        if (ma.outcome == VoteOutcome.Yes) {
+            // 呼叫 DMartProject 釋放資金 (此時若是最後里程碑，順便退還保證金)
+            project.releaseMilestoneFunds(milestoneIdx);
+        } else {
+            // 可能代表投票否決 => 不撥款
+            // (可在此擴充：終止專案、或允許重新提案等)
         }
-        else if (outcome == VoteOutcome.No) {
-            // ex: revertProject( ... ), refunds
-        }
-        else {
-            // incomplete => maybe let user re-report or extension
-        }
-        emit VotingExecuted(milestoneIdx, outcome);
     }
 
-    // ========== 其他: withdraw link, etc ==========
+    // ============== Owner設定/提領LINK 等 ==============
+    function setOracleJob(
+        address _oracle,
+        bytes32 _jobIdCreate,
+        bytes32 _jobIdResult,
+        uint256 _fee
+    ) external onlyOwner {
+        oracle = _oracle;
+        jobIdCreate = _jobIdCreate;
+        jobIdResult = _jobIdResult;
+        fee = _fee;
+    }
 
-    /**
-     * @dev 預防LINK不足or要回收
-     */
     function withdrawLink() external onlyOwner {
         LinkTokenInterface link = LinkTokenInterface(chainlinkTokenAddress());
         require(link.transfer(msg.sender, link.balanceOf(address(this))), "Unable to transfer LINK");
     }
 }
-
