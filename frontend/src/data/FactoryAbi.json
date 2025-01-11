@@ -10,6 +10,15 @@
 	},
 	{
 		"constant": true,
+		"inputs": [],
+		"name": "allProjectsLength",
+		"outputs": [{ "name": "", "type": "uint256" }],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},	
+	{
+		"constant": true,
 		"inputs": [{ "name": "", "type": "uint8" }],
 		"name": "durationOptions",
 		"outputs": [{ "name": "", "type": "uint256" }],

@@ -5,7 +5,6 @@ import abi from './FactoryAbi.json'; // Import your ABI as a JSON file
 function FetchFactoryData() {
   const infuraProjectId = process.env.REACT_APP_INFURA_PROJECT_ID;
   const provider = new providers.JsonRpcProvider(`https://sepolia.infura.io/v3/${infuraProjectId}`);
-  
   const contractAddress = process.env.REACT_APP_FACTORY_ADDRESS;
 
   // Initialize the contract

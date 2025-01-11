@@ -24,7 +24,23 @@ const getProjects = async () => {
     }
   ];
 
-  return mockProjects;
+  // const allProjects = await contract.allProjects();
+  // const allProjectsLength = await contract.allProjectsLength();
+  // const allProjectAddresses = await Promise.all(
+  //   Array.from({ length: allProjectsLength }, (_, i) => contract.allProjects(i))
+  // );
+
+  // return await Promise.all(
+  //   allProjectAddresses.map(async (address, index) => {
+  //     const details = await contract.projectDetails(address);
+  //     return {
+  //       id: index + 1,
+  //       title: details.title || "no title",
+  //       address: address || "no address",
+  //       image: details.image || 'https://picsum.photos/400/300', // Default image
+  //     };
+  //   })
+  // );
 };
 
 const HomePage = () => {
