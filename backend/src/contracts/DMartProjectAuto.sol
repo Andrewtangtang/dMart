@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-// 引入 Chainlink 合約，用於自動化和預言機交互
+// --------- Chainlink 相關 ---------
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/ConfirmedOwner.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-// 介面定義
+// --------- DMartProject & Factory 介面 ---------
 interface IDMartProject {
     function currentMilestone() external view returns (uint256);
     function submitMilestoneReport(uint256 milestoneIndex, string calldata cid) external;
@@ -25,316 +25,298 @@ interface IDMartFactory {
 }
 
 /**
- * @title DMartProjectAuto
- * @dev 自動化合約，利用 Chainlink Keepers 管理投票提案和資金分配。
- *      它自動創建投票提案，檢索投票結果，並根據結果釋放資金或觸發退款機制。
- *      與 DMartProject 和 DMartFactory 合約整合，確保無縫運作。
+ * @title DMartProjectAuto (Multiple Projects)
+ * @dev 單一合約管理多個 DMartProject，以減少部署次數。使用 Chainlink Keepers 自動化投票流程。
  */
 contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, ConfirmedOwner {
     using Chainlink for Chainlink.Request;
 
-    // 列舉投票結果的可能結果
+    // ========== 枚舉 & 結構 ==========
+
+    // 投票結果
     enum VoteOutcome { Undecided, Yes, No }
 
-    // 列舉里程碑自動化狀態
+    // 里程碑自動化狀態
     enum MilestoneAutoStatus { Idle, VotingOpen, VotingEnded }
 
     /**
-     * @dev 儲存每個里程碑的自動化細節結構。
-     * @param status 該里程碑的當前自動化狀態。
-     * @param proposalId Chainlink 提供的投票提案 ID。
-     * @param outcome 投票結果（Yes、No、Undecided）。
-     * @param executed 指示該結果是否已被執行。
+     * @dev 每個 (專案, 里程碑) 都會有一個 MilestoneAuto 狀態
      */
     struct MilestoneAuto {
-        MilestoneAutoStatus status;
-        bytes32 proposalId;
-        VoteOutcome outcome;
-        bool executed;
+        MilestoneAutoStatus status;  // Idle / VotingOpen / VotingEnded
+        bytes32 proposalId;          // 提案ID (經 Chainlink 回傳)
+        VoteOutcome outcome;         // Yes / No / Undecided
+        bool executed;               // 是否已執行結論
     }
 
-    // 從里程碑索引到其自動化細節的映射
-    mapping(uint256 => MilestoneAuto) public milestoneAutos;
+    // ========== 狀態變數 ==========
 
-    // Chainlink 相關變數
+    // 追蹤的所有專案清單
+    address[] public allTrackedProjects;
+    // 是否已追蹤
+    mapping(address => bool) public isTracked;
+
+    // Milestone 自動化細節：mapping(專案 => (milestoneIndex => MilestoneAuto))
+    mapping(address => mapping(uint256 => MilestoneAuto)) public milestoneAutos;
+
+    // Chainlink 相關
     address public oracle;            // Chainlink Oracle 地址
-    bytes32 public jobIdCreate;       // 創建投票提案的 Job ID
-    bytes32 public jobIdResult;       // 獲取投票結果的 Job ID
-    uint256 public fee;               // Chainlink 請求的費用
+    bytes32 public jobIdCreate;       // 創建提案的 Job ID
+    bytes32 public jobIdResult;       // 獲取結果的 Job ID
+    uint256 public fee;               // Chainlink 請求費用
+    address public linkToken;         // LINK Token 地址
 
-    // 與 DMartProject 和 DMartFactory 合約的參考
-    IDMartProject public project;       // 用於與 DMartProject 合約互動的介面
-    IDMartFactory public factory;       // 用於與 DMartFactory 合約互動的介面，主要用於截止時間檢查
+    // 事件
+    event ProjectRegistered(address indexed project);
+    event UpkeepAction(address indexed project, uint indexed milestoneIndex, string action);
+    event RequestCreateProposalSent(address indexed project, uint256 indexed milestoneIndex, bytes32 requestId);
+    event RequestGetResultSent(address indexed project, uint256 indexed milestoneIndex, bytes32 requestId);
+    event SnapshotProposalCreated(address indexed project, uint256 milestoneIndex, bytes32 proposalId);
 
-    // 事件聲明，用於紀錄自動化操作和 Chainlink 請求
-    event UpkeepAction(uint indexed milestoneIndex, string action);
-    event RequestCreateProposalSent(uint256 indexed milestoneIndex, bytes32 indexed requestId);
-    event RequestGetResultSent(uint256 indexed milestoneIndex, bytes32 indexed requestId);
-    /**
-     * @dev 在創建 Snapshot 提案後觸發，方便前端接收 proposalId 並生成投票網址。
-     * @param milestoneIndex 里程碑索引。
-     * @param proposalId  由 Chainlink 回傳的投票提案唯一 ID（可能是 bytes32 或 IPFS Hash）。
-     */
-    event SnapshotProposalCreated(
-        uint256 indexed milestoneIndex,
-        bytes32 indexed proposalId
-    );
+    // ========== Constructor ==========
 
-    /**
-     * @dev 構造函數，初始化自動化合約，設定必要的參數。
-     *      設定 Chainlink 代幣和 Oracle 詳細資訊。
-     * @param _project DMartProject 合約的地址，用於自動化管理。
-     * @param _factory DMartFactory 合約的地址，用於截止時間檢查。
-     * @param _linkToken Chainlink LINK 代幣的地址。
-     * @param _jobIdCreate 創建投票提案的 Job ID。
-     * @param _jobIdResult 獲取投票結果的 Job ID。
-     * @param _fee Chainlink 請求所需的費用。
-     */
     constructor(
-        address _project,
-        address _factory,
         address _linkToken,
+        address _oracle,
         bytes32 _jobIdCreate,
         bytes32 _jobIdResult,
         uint256 _fee
     ) ConfirmedOwner(msg.sender) {
-        _setChainlinkToken(_linkToken); // 設定 LINK 代幣地址
+        linkToken = _linkToken;
+        _setChainlinkToken(_linkToken);
 
-        project = IDMartProject(_project); // 初始化 DMartProject 介面
-        factory = IDMartFactory(_factory); // 初始化 DMartFactory 介面
-
-        oracle = 0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD;                   // 設定 Oracle 地址
-        jobIdCreate = _jobIdCreate;         // 設定創建提案的 Job ID
-        jobIdResult = _jobIdResult;         // 設定獲取結果的 Job ID
-        fee = _fee;                         // 設定 Chainlink 請求的費用
+        oracle = _oracle;
+        jobIdCreate = _jobIdCreate;
+        jobIdResult = _jobIdResult;
+        fee = _fee;
     }
 
-    // =================== KeeperCompatibleInterface 實作 ===================
+    // ========== 註冊專案 (由 Factory 呼叫) ==========
 
     /**
-     * @dev 檢查是否需要執行任何 upkeep。
-     *      判斷專案是否已經到期未達目標，或者某個里程碑需要動作。
-     * @return upkeepNeeded 布林值，指示是否需要 upkeep。
-     * @return performData 編碼數據，指示要執行的動作。
+     * @dev 將某個 DMartProject 註冊到本合約管理
+     *      - 假設只有合約擁有者 (或 factory) 可以呼叫
      */
-    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
-        // 1. 檢查專案是否已經到期且未達募資目標
-        uint256 deadline = factory.projectDeadlines(address(project));
-        if (block.timestamp > deadline) {
-            if (project.totalRaised() < project.target()) {
+    function registerProject(address projectAddr) external onlyOwner {
+        require(!isTracked[projectAddr], "Already tracked");
+        // 也可加個 require(factory.isProject(projectAddr), "...") 如果需要
+        isTracked[projectAddr] = true;
+        allTrackedProjects.push(projectAddr);
+
+        emit ProjectRegistered(projectAddr);
+    }
+
+    /**
+     * @dev 取得已追蹤的專案數量
+     */
+    function allTrackedProjectsLength() external view returns (uint256) {
+        return allTrackedProjects.length;
+    }
+
+    // ========== KeeperCompatibleInterface ==========
+
+    /**
+     * @notice checkUpkeep: 檢查是否有任何專案需要自動化動作
+     *
+     * @dev 這裡簡單做法：依序掃描 allTrackedProjects，
+     *    找出第一個「需要動作」的(專案, 里程碑)。若找到，就回傳 performData。
+     *    只要找到一個就結束(因為 Chainlink 每次只執行一次 performUpkeep)。
+     *
+     *    注意：若專案多且邏輯複雜，可能 gas 不足，需要更進階的「分批檢查」設計。
+     */
+    function checkUpkeep(bytes calldata)
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        for (uint i = 0; i < allTrackedProjects.length; i++) {
+            address proj = allTrackedProjects[i];
+            if (!isTracked[proj]) continue; // 避免無效
+
+            // 先檢查是否需要Refund
+            uint256 deadline = IDMartFactory(owner()).projectDeadlines(proj);
+            // 這裡假設owner()就是factory，如果您另有factory變數，需要調整。
+            // 或您可在registerProject時把deadline帶進來紀錄(因應您的架構)
+            if (block.timestamp > deadline) {
+                if (IDMartProject(proj).totalRaised() < IDMartProject(proj).target()) {
+                    // Refund
+                    // 編碼performData: (專案地址, 0, "REFUND")
+                    upkeepNeeded = true;
+                    performData = abi.encode(proj, 0, "REFUND");
+                    return (true, performData);
+                }
+            }
+
+            // 如果不需要 refund, 再檢查 Milestone 狀態
+            uint256 mIndex = IDMartProject(proj).currentMilestone();
+            MilestoneAuto memory ma = milestoneAutos[proj][mIndex];
+
+            if (ma.status == MilestoneAutoStatus.Idle) {
+                // 需要 CREATE
                 upkeepNeeded = true;
-                performData = abi.encode("REFUND"); // 指示需要執行退款
-                return (upkeepNeeded, performData);
+                performData = abi.encode(proj, mIndex, "CREATE");
+                return (true, performData);
+            } else if (ma.status == MilestoneAutoStatus.VotingOpen) {
+                // 需要 FINALIZE
+                upkeepNeeded = true;
+                performData = abi.encode(proj, mIndex, "FINALIZE");
+                return (true, performData);
             }
         }
 
-        // 2. 檢查當前里程碑的自動化狀態
-        uint256 mIndex = project.currentMilestone(); // 獲取當前里程碑索引
-        MilestoneAuto memory ma = milestoneAutos[mIndex]; // 獲取該里程碑的自動化細節
-
-        if (ma.status == MilestoneAutoStatus.Idle) {
-            // 如果里程碑處於閒置狀態，需要創建投票提案
-            upkeepNeeded = true;
-            performData = abi.encode(mIndex, "CREATE"); // 指示創建投票提案
-            return (upkeepNeeded, performData);
-        }
-        if (ma.status == MilestoneAutoStatus.VotingOpen) {
-            // 如果投票已開啟，需要最終化投票結果
-            upkeepNeeded = true;
-            performData = abi.encode(mIndex, "FINALIZE"); // 指示最終化投票
-            return (upkeepNeeded, performData);
-        }
-
-        // 如果以上條件均不符合，則不需要 upkeep
-        return (false, bytes(""));
+        // 如果沒有任何需要動作的專案
+        return (false, "");
     }
 
     /**
-     * @dev 執行所需的 upkeep，根據提供的 performData。
-     *      處理退款、創建投票提案和最終化投票結果。
-     * @param performData 編碼數據，指示要執行的動作。
+     * @notice performUpkeep: 執行對應動作
      */
     function performUpkeep(bytes calldata performData) external override {
-        bytes memory data = performData;
+        (address proj, uint256 mIndex, string memory action) =
+            abi.decode(performData, (address, uint256, string));
 
-        // 解碼 performData 以確定所需的動作
-        // 檢查動作是否為退款
-        if (keccak256(data) == keccak256(abi.encode("REFUND"))) {
-            project.refundAllInvestors(); // 觸發退款過程
+        emit UpkeepAction(proj, mIndex, action);
+
+        // REFUND
+        if (keccak256(bytes(action)) == keccak256("REFUND")) {
+            IDMartProject(proj).refundAllInvestors();
             return;
         }
 
-        // 否則，解碼為 (milestoneIndex, action)
-        (uint256 milestoneIndex, string memory action) = abi.decode(data, (uint256, string));
-        emit UpkeepAction(milestoneIndex, action); // 紀錄正在執行的動作
-
-        // 根據解碼的數據執行對應的動作
+        // CREATE
         if (keccak256(bytes(action)) == keccak256("CREATE")) {
-            // 如果動作是創建投票提案
-            requestCreateProposal(milestoneIndex);
-        } else if (keccak256(bytes(action)) == keccak256("FINALIZE")) {
-            // 如果動作是最終化投票結果
-            requestGetProposalResult(milestoneIndex);
+            requestCreateProposal(proj, mIndex);
+            return;
+        }
+
+        // FINALIZE
+        if (keccak256(bytes(action)) == keccak256("FINALIZE")) {
+            requestGetProposalResult(proj, mIndex);
+            return;
         }
     }
 
-    // =================== 投票提案創建 ===================
+    // ========== 建立投票提案 ==========
 
-    /**
-     * @dev 內部函式，用於為特定里程碑創建投票提案。
-     *      發送 Chainlink 請求以創建提案。
-     * @param mIndex 要為其創建提案的里程碑索引。
-     */
-    function requestCreateProposal(uint256 mIndex) internal {
-        MilestoneAuto storage ma = milestoneAutos[mIndex];
-        require(ma.status == MilestoneAutoStatus.Idle, "Wrong status"); // 確保里程碑為閒置狀態
-        ma.status = MilestoneAutoStatus.VotingOpen; // 更新狀態為投票開啟
-        ma.outcome = VoteOutcome.Undecided; // 初始化結果為未決定
+    function requestCreateProposal(address proj, uint256 mIndex) internal {
+        MilestoneAuto storage ma = milestoneAutos[proj][mIndex];
+        require(ma.status == MilestoneAutoStatus.Idle, "Wrong status");
+        ma.status = MilestoneAutoStatus.VotingOpen;
+        ma.outcome = VoteOutcome.Undecided;
 
-        // 建立 Chainlink 請求，用於創建投票提案
+        // 建立 Chainlink 請求
         Chainlink.Request memory req = _buildChainlinkRequest(
-            jobIdCreate, // 創建提案的 Job ID
-            address(this), // 回調地址
-            this.fulfillCreateProposal.selector // 回調函式
+            jobIdCreate,
+            address(this),
+            this.fulfillCreateProposal.selector
         );
 
-        // 添加 Chainlink 請求的參數
-        req._addUint("milestoneIndex", mIndex); // 指定里程碑索引
+        // 可能需要加參數，如 milestoneIndex, projectAddr 等
+        req._addUint("milestoneIndex", mIndex);
+        // 如果需要 projectAddr, 也可以加:
+        req._add("projectAddress", Strings.toHexString(uint160(proj), 20));
 
-        // 將 Chainlink 請求發送至指定的 Oracle
+        // 發送 Chainlink 請求
         bytes32 requestId = _sendChainlinkRequestTo(oracle, req, fee);
-        emit RequestCreateProposalSent(mIndex, requestId); // 紀錄請求
+        emit RequestCreateProposalSent(proj, mIndex, requestId);
     }
 
-    /**
-     * @dev Chainlink 回調函式，用於滿足創建提案的請求。
-     *      記錄從 Oracle 獲取的提案 ID。
-     * @param _requestId Chainlink 請求的唯一標識符。
-     * @param milestoneIdx 相關的里程碑索引。
-     * @param proposalId 創建的投票提案的唯一 ID。
-     */
-    function fulfillCreateProposal(bytes32 _requestId, uint256 milestoneIdx, bytes32 proposalId)
+    // fulfillCreateProposal
+    function fulfillCreateProposal(bytes32 _requestId, address proj, uint256 milestoneIdx, bytes32 proposalId)
         public
         recordChainlinkFulfillment(_requestId)
     {
-        MilestoneAuto storage ma = milestoneAutos[milestoneIdx];
-        require(ma.status == MilestoneAutoStatus.VotingOpen, "Not in VotingOpen"); // 確保狀態為投票開啟
-        ma.proposalId = proposalId; // 記錄提案 ID
-        
-        emit SnapshotProposalCreated(milestoneIdx, proposalId);
+        MilestoneAuto storage ma = milestoneAutos[proj][milestoneIdx];
+        require(ma.status == MilestoneAutoStatus.VotingOpen, "Not VotingOpen");
+
+        // 記錄回傳的proposalId
+        ma.proposalId = proposalId;
+
+        emit SnapshotProposalCreated(proj, milestoneIdx, proposalId);
     }
 
-    // =================== 投票結果獲取 ===================
+    // ========== 獲取投票結果 ==========
 
-    /**
-     * @dev 內部函式，用於獲取投票提案的結果。
-     *      發送 Chainlink 請求以獲取投票結果。
-     * @param mIndex 要獲取結果的里程碑索引。
-     */
-    function requestGetProposalResult(uint256 mIndex) internal {
-        MilestoneAuto storage ma = milestoneAutos[mIndex];
-        require(ma.status == MilestoneAutoStatus.VotingOpen, "Wrong status"); // 確保投票處於開啟狀態
-        require(ma.proposalId != bytes32(0), "No proposalId"); // 確保提案 ID 存在
+    function requestGetProposalResult(address proj, uint256 mIndex) internal {
+        MilestoneAuto storage ma = milestoneAutos[proj][mIndex];
+        require(ma.status == MilestoneAutoStatus.VotingOpen, "Wrong status");
+        require(ma.proposalId != bytes32(0), "No proposalId");
 
-        // 建立 Chainlink 請求，用於獲取投票結果
         Chainlink.Request memory req = _buildChainlinkRequest(
-            jobIdResult, // 獲取結果的 Job ID
-            address(this), // 回調地址
-            this.fulfillGetProposalResult.selector // 回調函式
+            jobIdResult,
+            address(this),
+            this.fulfillGetProposalResult.selector
         );
 
-        // 添加 Chainlink 請求的參數
-        req._addUint("milestoneIndex", mIndex); // 指定里程碑索引
-        req._add("proposalId", string(abi.encodePacked(ma.proposalId))); // 將 bytes32 轉為 string // 指定提案 ID
+        req._addUint("milestoneIndex", mIndex);
+        // 這裡可以用 bytes32 -> string
+        req._add("proposalId", string(abi.encodePacked(ma.proposalId)));
+        req._add("projectAddress", Strings.toHexString(uint160(proj), 20));
 
-        // 將 Chainlink 請求發送至指定的 Oracle
         bytes32 requestId = _sendChainlinkRequestTo(oracle, req, fee);
-        emit RequestGetResultSent(mIndex, requestId); // 紀錄請求
+        emit RequestGetResultSent(proj, mIndex, requestId);
     }
 
-    /**
-     * @dev Chainlink 回調函式，用於滿足獲取投票結果的請求。
-     *      根據投票結果執行相應的動作。
-     * @param _requestId Chainlink 請求的唯一標識符。
-     * @param milestoneIdx 相關的里程碑索引。
-     * @param yesCount 贊成票數量。
-     * @param noCount 反對票數量。
-     */
+    // fulfillGetProposalResult
     function fulfillGetProposalResult(
         bytes32 _requestId,
+        address proj,
         uint256 milestoneIdx,
         uint256 yesCount,
         uint256 noCount
-    ) public recordChainlinkFulfillment(_requestId) {
-        MilestoneAuto storage ma = milestoneAutos[milestoneIdx];
-        require(ma.status == MilestoneAutoStatus.VotingOpen, "Not in VotingOpen"); // 確保投票處於開啟狀態
+    )
+        public
+        recordChainlinkFulfillment(_requestId)
+    {
+        MilestoneAuto storage ma = milestoneAutos[proj][milestoneIdx];
+        require(ma.status == MilestoneAutoStatus.VotingOpen, "Not VotingOpen");
 
-        // 根據投票結果確定結果
         if (yesCount > noCount) {
-            ma.outcome = VoteOutcome.Yes; // 投票通過
+            ma.outcome = VoteOutcome.Yes;
         } else {
-            ma.outcome = VoteOutcome.No; // 投票失敗或平局
+            ma.outcome = VoteOutcome.No;
         }
 
-        // 更新狀態為投票結束
         ma.status = MilestoneAutoStatus.VotingEnded;
-        ma.executed = false; // 重置執行標誌
+        ma.executed = false;
 
-        // 根據投票結果執行後續動作
-        _executeVotingOutcome(milestoneIdx);
+        _executeVotingOutcome(proj, milestoneIdx);
     }
 
-    /**
-     * @dev 內部函式，根據投票結果執行相應的動作。
-     *      如果投票結果為 Yes，則釋放該里程碑的資金。
-     *      如果投票結果為 No，則標記專案為失敗並啟動退款。
-     * @param milestoneIdx 相關的里程碑索引。
-     */
-    function _executeVotingOutcome(uint256 milestoneIdx) internal {
-        MilestoneAuto storage ma = milestoneAutos[milestoneIdx];
-        require(ma.status == MilestoneAutoStatus.VotingEnded, "Voting not ended yet"); // 確保投票已結束
-        require(!ma.executed, "Outcome already executed"); // 防止結果被重複執行
-        ma.executed = true; // 標記結果已執行
+    // 執行投票結果
+    function _executeVotingOutcome(address proj, uint256 milestoneIdx) internal {
+        MilestoneAuto storage ma = milestoneAutos[proj][milestoneIdx];
+        require(ma.status == MilestoneAutoStatus.VotingEnded, "Voting not ended");
+        require(!ma.executed, "Already executed");
+        ma.executed = true;
 
         if (ma.outcome == VoteOutcome.Yes) {
-            // 如果投票通過，釋放該里程碑的資金
-            project.releaseMilestoneFunds(milestoneIdx);
+            // milestone成功
+            IDMartProject(proj).releaseMilestoneFunds(milestoneIdx);
         } else {
-            // 如果投票失敗，標記專案為失敗並啟動退款
-            project.failAndRefundAll();
+            // milestone失敗 -> fail & refund
+            IDMartProject(proj).failAndRefundAll();
         }
     }
 
-    // =================== 擁有者函式 ===================
+    // ========== Owner function ==========
 
-    /**
-     * @dev 允許合約擁有者更新 Chainlink Oracle 和 Job ID。
-     *      僅限合約擁有者調用。
-     * @param _oracle 新的 Chainlink Oracle 地址。
-     * @param _jobIdCreate 新的創建投票提案的 Job ID。
-     * @param _jobIdResult 新的獲取投票結果的 Job ID。
-     * @param _fee 新的 Chainlink 請求費用。
-     */
     function setOracleJob(
         address _oracle,
         bytes32 _jobIdCreate,
         bytes32 _jobIdResult,
         uint256 _fee
     ) external onlyOwner {
-        oracle = _oracle;                 // 更新 Oracle 地址
-        jobIdCreate = _jobIdCreate;       // 更新創建提案的 Job ID
-        jobIdResult = _jobIdResult;       // 更新獲取結果的 Job ID
-        fee = _fee;                       // 更新 Chainlink 請求費用
+        oracle = _oracle;
+        jobIdCreate = _jobIdCreate;
+        jobIdResult = _jobIdResult;
+        fee = _fee;
     }
 
-    /**
-     * @dev 允許合約擁有者提領合約中剩餘的 LINK 代幣。
-     *      用於回收未使用的資金或管理合約的 LINK 餘額。
-     *      僅限合約擁有者調用。
-     */
     function withdrawLink() external onlyOwner {
-        LinkTokenInterface link = LinkTokenInterface(_chainlinkTokenAddress()); // 與 LINK 代幣互動的介面
-        require(link.transfer(msg.sender, link.balanceOf(address(this))), "Unable to transfer LINK"); // 將 LINK 轉移給擁有者
+        LinkTokenInterface link = LinkTokenInterface(_chainlinkTokenAddress());
+        require(link.transfer(msg.sender, link.balanceOf(address(this))), "Unable to transfer LINK");
     }
 }
 
