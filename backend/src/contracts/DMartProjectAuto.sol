@@ -6,6 +6,7 @@ import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/ConfirmedOwner.sol";
 
+
 // 介面定義
 interface IDMartProject {
     function currentMilestone() external view returns (uint256);
@@ -73,7 +74,6 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
      * @dev 在創建 Snapshot 提案後觸發，方便前端接收 proposalId 並生成投票網址。
      * @param milestoneIndex 里程碑索引。
      * @param proposalId  由 Chainlink 回傳的投票提案唯一 ID（可能是 bytes32 或 IPFS Hash）。
-     * @param proposalUrl 可以選擇拼接完整網址，或留空讓前端自行組合。
      */
     event SnapshotProposalCreated(
         uint256 indexed milestoneIndex,
@@ -86,7 +86,6 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
      * @param _project DMartProject 合約的地址，用於自動化管理。
      * @param _factory DMartFactory 合約的地址，用於截止時間檢查。
      * @param _linkToken Chainlink LINK 代幣的地址。
-     * @param _oracle Chainlink Oracle 的地址，用於處理請求。
      * @param _jobIdCreate 創建投票提案的 Job ID。
      * @param _jobIdResult 獲取投票結果的 Job ID。
      * @param _fee Chainlink 請求所需的費用。
@@ -99,7 +98,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         bytes32 _jobIdResult,
         uint256 _fee
     ) ConfirmedOwner(msg.sender) {
-        setChainlinkToken(_linkToken); // 設定 LINK 代幣地址
+        _setChainlinkToken(_linkToken); // 設定 LINK 代幣地址
 
         project = IDMartProject(_project); // 初始化 DMartProject 介面
         factory = IDMartFactory(_factory); // 初始化 DMartFactory 介面
@@ -115,7 +114,6 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
     /**
      * @dev 檢查是否需要執行任何 upkeep。
      *      判斷專案是否已經到期未達目標，或者某個里程碑需要動作。
-     * @param checkData 此實作中未使用。
      * @return upkeepNeeded 布林值，指示是否需要 upkeep。
      * @return performData 編碼數據，指示要執行的動作。
      */
@@ -194,7 +192,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         ma.outcome = VoteOutcome.Undecided; // 初始化結果為未決定
 
         // 建立 Chainlink 請求，用於創建投票提案
-        Chainlink.Request memory req = buildChainlinkRequest(
+        Chainlink.Request memory req = _buildChainlinkRequest(
             jobIdCreate, // 創建提案的 Job ID
             address(this), // 回調地址
             this.fulfillCreateProposal.selector // 回調函式
@@ -204,7 +202,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         req.addUint("milestoneIndex", mIndex); // 指定里程碑索引
 
         // 將 Chainlink 請求發送至指定的 Oracle
-        bytes32 requestId = sendChainlinkRequestTo(oracle, req, fee);
+        bytes32 requestId = _sendChainlinkRequestTo(oracle, req, fee);
         emit RequestCreateProposalSent(mIndex, requestId); // 紀錄請求
     }
 
@@ -239,7 +237,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         require(ma.proposalId != bytes32(0), "No proposalId"); // 確保提案 ID 存在
 
         // 建立 Chainlink 請求，用於獲取投票結果
-        Chainlink.Request memory req = buildChainlinkRequest(
+        Chainlink.Request memory req = _buildChainlinkRequest(
             jobIdResult, // 獲取結果的 Job ID
             address(this), // 回調地址
             this.fulfillGetProposalResult.selector // 回調函式
@@ -250,7 +248,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         req.addBytes32("proposalId", ma.proposalId); // 指定提案 ID
 
         // 將 Chainlink 請求發送至指定的 Oracle
-        bytes32 requestId = sendChainlinkRequestTo(oracle, req, fee);
+        bytes32 requestId = _sendChainlinkRequestTo(oracle, req, fee);
         emit RequestGetResultSent(mIndex, requestId); // 紀錄請求
     }
 
@@ -335,7 +333,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
      *      僅限合約擁有者調用。
      */
     function withdrawLink() external onlyOwner {
-        LinkTokenInterface link = LinkTokenInterface(chainlinkTokenAddress()); // 與 LINK 代幣互動的介面
+        LinkTokenInterface link = LinkTokenInterface(_chainlinkTokenAddress()); // 與 LINK 代幣互動的介面
         require(link.transfer(msg.sender, link.balanceOf(address(this))), "Unable to transfer LINK"); // 將 LINK 轉移給擁有者
     }
 }
