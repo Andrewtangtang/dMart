@@ -13,7 +13,7 @@ interface IDMartProject {
     function releaseMilestoneFunds(uint256 milestoneIndex) external;
     function resetMilestone(uint256 milestoneIndex) external;
     function refundAllInvestors() external;
-    function failAndRefundAll() external;       // 新增
+    function failAndRefundAll() external;
     function totalRaised() external view returns(uint256);
     function target() external view returns(uint256);
 }
@@ -69,6 +69,16 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
     event UpkeepAction(uint indexed milestoneIndex, string action);
     event RequestCreateProposalSent(uint256 indexed milestoneIndex, bytes32 indexed requestId);
     event RequestGetResultSent(uint256 indexed milestoneIndex, bytes32 indexed requestId);
+    /**
+     * @dev 在創建 Snapshot 提案後觸發，方便前端接收 proposalId 並生成投票網址。
+     * @param milestoneIndex 里程碑索引。
+     * @param proposalId  由 Chainlink 回傳的投票提案唯一 ID（可能是 bytes32 或 IPFS Hash）。
+     * @param proposalUrl 可以選擇拼接完整網址，或留空讓前端自行組合。
+     */
+    event SnapshotProposalCreated(
+        uint256 indexed milestoneIndex,
+        bytes32 indexed proposalId
+    );
 
     /**
      * @dev 構造函數，初始化自動化合約，設定必要的參數。
@@ -213,6 +223,8 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         MilestoneAuto storage ma = milestoneAutos[milestoneIdx];
         require(ma.status == MilestoneAutoStatus.VotingOpen, "Not in VotingOpen"); // 確保狀態為投票開啟
         ma.proposalId = proposalId; // 記錄提案 ID
+        
+        emit SnapshotProposalCreated(milestoneIdx, proposalId);
     }
 
     // =================== 投票結果獲取 ===================

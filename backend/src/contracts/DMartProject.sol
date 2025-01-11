@@ -43,6 +43,7 @@ contract DMartProject {
     bool public initialReleased;   // 是否已釋放首次 10%
     string public title;           // 專案標題
     string public image;           // 專案圖片 URL 或 IPFS CID
+    string public description;
 
     // 里程碑管理
     uint256 public currentMilestone;    // 當前活躍里程碑的索引（0-3）
@@ -103,7 +104,8 @@ contract DMartProject {
         address _platform,
         uint256 _target,
         string memory _title,
-        string memory _image
+        string memory _image,
+        string memory _description
     ) external {
         require(msg.sender == factory, "Only factory can initialize"); // 僅限 Factory 合約調用
         require(target == 0, "Already initialized."); // 確保僅初始化一次
@@ -117,6 +119,7 @@ contract DMartProject {
         target    = _target;
         title     = _title;
         image     = _image;
+        description = _description;
 
         // 計算並設定保證金（目標的 30%）
         uint256 _collateral = (_target * 30) / 100;
@@ -146,7 +149,6 @@ contract DMartProject {
      * @param amount 要捐款的 USDT 金額。
      */
     function donate(uint256 amount) external lock {
-        require(totalRaised + amount <= target, "Exceed target"); // 防止超募
         require(IERC20(usdt).balanceOf(msg.sender) >= amount, "Donor has not enough balance"); // 檢查捐款者餘額
 
         // 將 USDT 從捐款者轉移至此合約
