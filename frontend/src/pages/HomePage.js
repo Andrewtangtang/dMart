@@ -1,34 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import ProjectCard from '../components/ProjectCard';
+import { getIPFSUrl } from '../utils/ipfs';
 
 // 獲取專案資料
 const getProjects = async () => {
-  return [
+  // 模擬從後端 API 獲取專案資料
+  const mockProjects = [
     {
       id: 1,
-      title: '創新科技產品開發計畫',
+      title: '永續時尚設計專案',
       contractAddress: '0x1234...5678',
-      image: 'https://picsum.photos/400/300',
-      targetAmount: 2000,
-      currentAmount: 1500
+      image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
+      currentAmount: 30000,
+      targetAmount: 50000,
     },
     {
       id: 2,
-      title: '永續時尚設計專案',
-      contractAddress: '0x9876...4321',
-      image: 'https://picsum.photos/400/301',
-      targetAmount: 3000,
-      currentAmount: 3000
-    },
-    {
-      id: 3,
       title: '在地小農支持計畫',
-      contractAddress: '0x2468...1357',
-      image: 'https://picsum.photos/400/302',
-      targetAmount: 5000,
-      currentAmount: 4500
+      contractAddress: '0x9876...4321',
+      image: getIPFSUrl('bafkreiawyjbhm2kwm2q3ysy2ccwrc3i5l6dbupqhht4znxcdmi5m3k5lmm'),
+      currentAmount: 20000,
+      targetAmount: 100000,
     }
   ];
+
+  return mockProjects;
 };
 
 const HomePage = () => {

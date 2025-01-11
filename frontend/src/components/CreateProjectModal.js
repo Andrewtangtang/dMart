@@ -1,23 +1,16 @@
 import React, { useState } from 'react';
+import web3Service from '../services/web3Service';
+import { ethers } from 'ethers';
 
 const CreateProjectModal = ({ isOpen, onClose }) => {
   const [formData, setFormData] = useState({
     title: '',
-    description: '',
-    image: null,
+    descriptionCID: '',
+    imageCID: '',
     targetAmount: '100',
-    duration: '1',
-    basicPlan: {
-      price: '20',
-      description: ''
-    },
-    advancedPlan: {
-      price: '40',
-      description: ''
-    }
+    duration: '1'
   });
-
-  const [imagePreview, setImagePreview] = useState(null);
+  const [transactionLoading, setTransactionLoading] = useState(false);
 
   const handleBackgroundClick = (e) => {
     if (e.target === e.currentTarget) {
@@ -25,23 +18,79 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFormData({ ...formData, image: file });
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: 處理表單提交邏輯
-    console.log('Form submitted:', formData);
-    onClose();
+    
+    try {
+      setTransactionLoading(true);
+      
+      // 1. 確保錢包已連接
+      if (!web3Service.isConnected()) {
+        console.log('Connecting wallet...');
+        await web3Service.connectWallet();
+      }
+      
+      // 2. 檢查網路
+      const isCorrectNetwork = await web3Service.checkNetwork();
+      console.log('Network check:', isCorrectNetwork ? 'correct' : 'incorrect');
+      
+      if (!isCorrectNetwork) {
+        alert('請將 MetaMask 切換到 Sepolia 測試網');
+        return;
+      }
+
+      // 3. 準備合約所需的參數
+      const targetAmount = parseInt(formData.targetAmount);
+      const depositAmount = Math.floor(targetAmount * 0.3);
+      const durationInSeconds = parseInt(formData.duration) * 30 * 24 * 60 * 60;
+
+      // 模擬的合約地址（這裡需要替換成實際的合約地址）
+      const contractAddress = "0x0000000000000000000000000000000000000000";
+
+      // 驗證合約地址格式
+      if (!ethers.utils.isAddress(contractAddress)) {
+        console.log('Invalid contract address:', contractAddress);
+        throw new Error('無效的合約地址');
+      }
+
+      // 4. 準備交易資料
+      const tx = {
+        to: ethers.utils.getAddress(contractAddress),
+        value: ethers.utils.parseEther("0"),
+        gasLimit: 21000
+      };
+
+      console.log('Project data:', {
+        title: formData.title,
+        description: formData.descriptionCID,
+        image: formData.imageCID,
+        targetAmount: `${targetAmount} USDT`,
+        deposit: `${depositAmount} USDT`,
+        duration: `${formData.duration} month(s)`,
+        contractAddress: tx.to
+      });
+
+      console.log('Starting transaction');
+
+      // 5. 發送交易
+      const signer = web3Service.signer;
+      await signer.sendTransaction(tx);
+
+      console.log('Transaction sent');
+      
+    } catch (error) {
+      console.log('Transaction failed:', {
+        code: error.code,
+        message: error.message
+      });
+      
+      // 只有在不是用戶取消交易的情況下才顯示錯誤訊息
+      if (error.code !== 4001) {
+        alert('交易失敗: ' + error.message);
+      }
+    } finally {
+      setTransactionLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -76,79 +125,34 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
             />
           </div>
 
-          {/* 專案介紹 */}
+          {/* 專案介紹 CID */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              專案介紹
+              專案介紹 CID
             </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows="4"
+            <input
+              type="text"
+              value={formData.descriptionCID}
+              onChange={(e) => setFormData({ ...formData, descriptionCID: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#00AA9F] focus:border-[#00AA9F]"
+              placeholder="請輸入 IPFS 專案介紹 CID"
               required
             />
           </div>
 
-          {/* 專案圖片 */}
+          {/* 圖片 CID */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              專案圖片
+              圖片 CID
             </label>
-            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-              <div className="space-y-1 text-center">
-                {imagePreview ? (
-                  <div className="relative">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="mx-auto h-48 w-auto object-cover rounded-md"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImagePreview(null);
-                        setFormData({ ...formData, image: null });
-                      }}
-                      className="absolute top-2 right-2 bg-white rounded-full p-1 shadow-md"
-                    >
-                      <svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <svg
-                      className="mx-auto h-12 w-12 text-gray-400"
-                      stroke="currentColor"
-                      fill="none"
-                      viewBox="0 0 48 48"
-                    >
-                      <path
-                        d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <div className="flex text-sm text-gray-600">
-                      <label className="relative cursor-pointer bg-white rounded-md font-medium text-[#00AA9F] hover:text-[#008F86] focus-within:outline-none">
-                        <span>上傳圖片</span>
-                        <input
-                          type="file"
-                          className="sr-only"
-                          accept="image/*"
-                          onChange={handleImageChange}
-                          required
-                        />
-                      </label>
-                    </div>
-                    <p className="text-xs text-gray-500">PNG, JPG, GIF 最大 10MB</p>
-                  </>
-                )}
-              </div>
-            </div>
+            <input
+              type="text"
+              value={formData.imageCID}
+              onChange={(e) => setFormData({ ...formData, imageCID: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#00AA9F] focus:border-[#00AA9F]"
+              placeholder="請輸入 IPFS 圖片 CID"
+              required
+            />
           </div>
 
           {/* 募資金額 */}
@@ -186,71 +190,22 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
             </select>
           </div>
 
-          {/* 回饋方案 */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium text-gray-900">回饋方案設定</h3>
-            
-            {/* 基本方案 */}
-            <div className="border border-gray-200 rounded-md p-4">
-              <h4 className="text-base font-medium text-gray-700 mb-3">基本方案 (20 USDT)</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    方案內容
-                  </label>
-                  <textarea
-                    value={formData.basicPlan.description}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      basicPlan: { ...formData.basicPlan, description: e.target.value }
-                    })}
-                    rows="3"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#00AA9F] focus:border-[#00AA9F]"
-                    placeholder="請詳細描述此方案包含的回饋內容..."
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 進階方案 */}
-            <div className="border border-gray-200 rounded-md p-4">
-              <h4 className="text-base font-medium text-gray-700 mb-3">進階方案 (40 USDT)</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    方案內容
-                  </label>
-                  <textarea
-                    value={formData.advancedPlan.description}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      advancedPlan: { ...formData.advancedPlan, description: e.target.value }
-                    })}
-                    rows="3"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-[#00AA9F] focus:border-[#00AA9F]"
-                    placeholder="請詳細描述此方案包含的回饋內容..."
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* 按鈕組 */}
           <div className="flex gap-4 pt-4">
             <button
               type="button"
               onClick={onClose}
               className="flex-1 px-6 py-3 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={transactionLoading}
             >
               取消
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-[#FFAD36] text-white rounded-md hover:bg-[#FF9D16] transition-colors"
+              disabled={transactionLoading}
+              className="flex-1 px-6 py-3 bg-[#FFAD36] text-white rounded-md hover:bg-[#FF9D16] transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              確認發起
+              {transactionLoading ? '處理中...' : '確認發起'}
             </button>
           </div>
         </form>

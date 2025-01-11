@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import DonateModal from '../components/DonateModal';
 import web3Service from '../services/web3Service';
+import { getIPFSUrl } from '../utils/ipfs';
 
 // 固定的里程碑階段描述
 const MILESTONE_DESCRIPTIONS = [
@@ -11,22 +12,13 @@ const MILESTONE_DESCRIPTIONS = [
   '量產準備階段'
 ];
 
-// 獲取用戶參與的專案列表
-const getUserParticipatedProjects = async (address) => {
-  // TODO: 這裡將來要改為實際從智能合約獲取資料
-  return [
-    '0x9876...4321',  // 永續時尚設計專案
-    '0x2468...1357'   // 在地小農支持計畫
-  ];
-};
-
 // 模擬的專案資料
 const MOCK_PROJECTS = {
   '1': {
     id: '1',
     title: '創新科技產品開發計畫',
     category: '科技',
-    image: 'https://picsum.photos/800/600',
+    image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
     targetAmount: 100000,
     currentAmount: 75000,
     backerCount: 200,
@@ -64,7 +56,7 @@ const MOCK_PROJECTS = {
     id: '2',
     title: '永續時尚設計專案',
     category: '時尚',
-    image: 'https://picsum.photos/800/601',
+    image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
     targetAmount: 50000,
     currentAmount: 45000,
     backerCount: 150,
@@ -100,7 +92,7 @@ const MOCK_PROJECTS = {
     id: '3',
     title: '在地小農支持計畫',
     category: '地方創生',
-    image: 'https://picsum.photos/800/602',
+    image: getIPFSUrl('bafkreiawyjbhm2kwm2q3ysy2ccwrc3i5l6dbupqhht4znxcdmi5m3k5lmm'),
     targetAmount: 30000,
     currentAmount: 15000,
     backerCount: 80,
@@ -134,15 +126,39 @@ const MOCK_PROJECTS = {
   }
 };
 
+// 模擬合約存儲的參與者資料
+const MOCK_CONTRACT_PARTICIPANTS = {
+  '0x1234...5678': ['0xABCD...1234', '0xEFGH...5678'], // 專案合約地址: [參與者地址陣列]
+  '0x9876...4321': ['0x1111...2222', '0x3333...4444'],
+  '0x2468...1357': ['0x5555...6666', '0xABCD...1234']
+};
+
 // 獲取專案詳細資訊
 const getProjectDetails = async (projectId) => {
-  
   // 根據 ID 返回對應的專案資料
   const projectData = MOCK_PROJECTS[projectId];
   if (!projectData) {
     throw new Error('找不到專案資料');
   }
-  return projectData;
+
+  try {
+    // 從 IPFS 獲取描述內容
+    const response = await fetch(getIPFSUrl('bafkreig5nawy5kiz5fqfg47sazbsdzvfowwjmvzqgkgvu432fbughwyp7i'));
+    const description = await response.text();
+    
+    // 印出從 IPFS 獲取的描述內容
+    console.log('從 IPFS 獲取的描述內容:', description);
+    console.log('IPFS URL:', getIPFSUrl('bafkreig5nawy5kiz5fqfg47sazbsdzvfowwjmvzqgkgvu432fbughwyp7i'));
+    
+    // 更新專案資料中的描述
+    return {
+      ...projectData,
+      description
+    };
+  } catch (error) {
+    console.error('從 IPFS 獲取描述失敗:', error);
+    return projectData; // 如果獲取失敗，返回原始資料
+  }
 };
 
 const ProjectDetailPage = () => {
@@ -196,11 +212,12 @@ const ProjectDetailPage = () => {
         const details = await getProjectDetails(id);
         setProjectData(details);
 
-        // 檢查用戶是否已參與此專案
+        // 檢查用戶是否參與此專案
         if (web3Service.isConnected()) {
-          const address = web3Service.getCurrentAccount();
-          const participatedAddresses = await getUserParticipatedProjects(address);
-          const isParticipated = participatedAddresses.includes(details.contractAddress);
+          const userAddress = web3Service.getCurrentAccount();
+          // 從模擬的合約資料中檢查用戶是否為參與者
+          const projectParticipants = MOCK_CONTRACT_PARTICIPANTS[details.contractAddress] || [];
+          const isParticipated = projectParticipants.includes(userAddress);
           setHasParticipated(isParticipated);
         }
       } catch (err) {
