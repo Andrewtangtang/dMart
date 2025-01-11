@@ -1,46 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import ProjectCard from '../components/ProjectCard';
+import { providers, Contract } from 'ethers';
+import { FactoryAbi } from "../data/FactoryAbi.json";
+import { ProjectAbi } from "../data/ProjectAbi.json";
 import { getIPFSUrl } from '../utils/ipfs';
 
 // 獲取專案資料
 const getProjects = async () => {
-  // 模擬從後端 API 獲取專案資料
-  const mockProjects = [
-    {
-      id: 1,
-      title: '永續時尚設計專案',
-      contractAddress: '0x1234...5678',
-      image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
-      currentAmount: 30000,
-      targetAmount: 50000,
-    },
-    {
-      id: 2,
-      title: '在地小農支持計畫',
-      contractAddress: '0x9876...4321',
-      image: getIPFSUrl('bafkreiawyjbhm2kwm2q3ysy2ccwrc3i5l6dbupqhht4znxcdmi5m3k5lmm'),
-      currentAmount: 20000,
-      targetAmount: 100000,
-    }
-  ];
+  const infuraProjectId = process.env.REACT_APP_INFURA_PROJECT_ID;
+  const provider = new providers.JsonRpcProvider(`https://sepolia.infura.io/v3/${infuraProjectId}`);
+  const factoryAddress = process.env.REACT_APP_FACTORY_ADDRESS;
+  const factory = new Contract(factoryAddress, FactoryAbi, provider);
+  
+  const allProjects = await factory.allProjects(); // Assuming this returns an array of all project addresses
 
-  // const allProjects = await contract.allProjects();
-  // const allProjectsLength = await contract.allProjectsLength();
-  // const allProjectAddresses = await Promise.all(
-  //   Array.from({ length: allProjectsLength }, (_, i) => contract.allProjects(i))
-  // );
+  // Fetch details for all projects in parallel
+  return await Promise.all(
+    allProjects.map(async (address, index) => {
+      const project = new ethers.Contract(address, ProjectAbi, provider); // Initialize the project contract
 
-  // return await Promise.all(
-  //   allProjectAddresses.map(async (address, index) => {
-  //     const details = await contract.projectDetails(address);
-  //     return {
-  //       id: index + 1,
-  //       title: details.title || "no title",
-  //       address: address || "no address",
-  //       image: details.image || 'https://picsum.photos/400/300', // Default image
-  //     };
-  //   })
-  // );
+      // Fetch project details in parallel
+      const [title, image, target, totalRaised] = await Promise.all([
+        project.title().catch(() => "no title"), // Get title or default
+        project.image().catch(() => null), // Get image or default
+        project.target().catch(() => 0), // Get target amount or default
+        project.totalRaised().catch(() => 0) // Get total raised or default
+      ]);
+
+      const resolvedImage = image ? getIPFSUrl(image) : 'https://picsum.photos/400/300';
+
+      // Return the enriched project object
+      return {
+        id: index + 1, // Unique ID based on index
+        title,
+        contractAddress: address,
+        image: resolvedImage,
+        targetAmount: target.toString(), // Convert BigNumber to string
+        currentAmount: totalRaised.toString() // Convert BigNumber to string
+      };
+    })
+  );
 };
 
 const HomePage = () => {

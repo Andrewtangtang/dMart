@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom';
 import ProjectCard from '../components/ProjectCard';
 import CreateProjectModal from '../components/CreateProjectModal';
 import web3Service from '../services/web3Service';
+import { FactoryAbi } from "../data/FactoryAbi.json";
+import { ProjectAbi } from "../data/ProjectAbi.json";
+
+const infuraProjectId = process.env.REACT_APP_INFURA_PROJECT_ID;
+const provider = new providers.JsonRpcProvider(`https://sepolia.infura.io/v3/${infuraProjectId}`);
+const factoryAddress = process.env.REACT_APP_FACTORY_ADDRESS;
+const factory = new Contract(factoryAddress, FactoryAbi, provider);
 
 // 獲取用戶資訊
 const getUserProfile = async (address) => {
@@ -21,19 +28,42 @@ const getUserProfile = async (address) => {
 };
 
 // 獲取用戶發起的專案列表
-const getUserCreatedProjects = async (address) => {
+const getUserCreatedProjects = async (creatorAddress) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
-  return [
-    {
-      id: 1,
-      title: '創新科技產品開發計畫',
-      contractAddress: address,
-      image: 'https://picsum.photos/400/300',
-      currentAmount: 1500,
-      targetAmount: 2000,
-      category: '科技'
-    }
-  ];
+  const allProjects = await factory.allProjects(); // Assuming this returns an array of all project addresses
+
+  return await Promise.all(
+    allProjects.map(async (address, index) => {
+      const project = new ethers.Contract(address, ProjectAbi, provider); // Initialize the project contract
+
+      // Fetch the creator and project details in parallel
+      const [creator, title, image, target, totalRaised] = await Promise.all([
+        project.creator().catch(() => "0x0000000000000000000000000000000000000000"), // Get creator address or default
+        project.title().catch(() => "no title"), // Get title or default
+        project.image().catch(() => null), // Get image or default
+        project.target().catch(() => 0), // Get target amount or default
+        project.totalRaised().catch(() => 0) // Get total raised or default
+      ]);
+
+      const resolvedImage = image ? getIPFSUrl(image) : 'https://picsum.photos/400/300';
+
+      // Only include projects created by the specified creator
+      if (creator.toLowerCase() === creatorAddress.toLowerCase()) {
+        return {
+          id: index + 1, // Unique ID based on index
+          title,
+          contractAddress: address,
+          image: resolvedImage,
+          targetAmount: target.toString(), // Convert BigNumber to string
+          currentAmount: totalRaised.toString() // Convert BigNumber to string
+        };
+      }
+
+      // If the creator does not match, return null
+      return null;
+    })
+  ).then((projects) => projects.filter((project) => project !== null)); // Remove null entries
+
 };
 
 // 獲取用戶參與的專案列表
