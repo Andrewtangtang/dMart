@@ -55,5 +55,24 @@
 		"payable": false,
 		"stateMutability": "view",
 		"type": "function"
-	}
+	},
+	{
+		"inputs": [
+		  {  "name": "creator", "type": "address" },
+		  {  "name": "platform", "type": "address" },
+		  {  "name": "target", "type": "uint256" },
+		  {  "name": "durationChoice", "type": "uint8" },
+		  {  "name": "defaultUSDT", "type": "address" },
+		  {  "name": "defaultAavePool", "type": "address" },
+		  {  "name": "defaultAToken", "type": "address" },
+		  {  "name": "title", "type": "string" },
+		  {  "name": "image", "type": "string" }
+		],
+		"name": "createProject",
+		"outputs": [
+		  { "name": "projectAddress", "type": "address" }
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	}	
 ]

@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import DonateModal from '../components/DonateModal';
 import web3Service from '../services/web3Service';
 import { getIPFSUrl } from '../utils/ipfs';
+import { FactoryAbi } from "../data/FactoryAbi.json";
+import { ProjectAbi } from "../data/ProjectAbi.json";
 
 // 固定的里程碑階段描述
 const MILESTONE_DESCRIPTIONS = [

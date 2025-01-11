@@ -67,37 +67,40 @@ const getUserCreatedProjects = async (creatorAddress) => {
 };
 
 // 獲取用戶參與的專案列表
-const getUserParticipatedProjects = async (address) => {
+const getUserParticipatedProjects = async (participantAddress) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
-  return [
-    {
-      id: 2,
-      title: '永續時尚設計專案',
-      contractAddress: '0x9876...4321',
-      image: 'https://picsum.photos/400/301',
-      currentAmount: 3000,
-      targetAmount: 3000,
-      category: '時尚'
-    },
-    {
-      id: 3,
-      title: '在地小農支持計畫',
-      contractAddress: '0x2468...1357',
-      image: 'https://picsum.photos/400/302',
-      currentAmount: 4500,
-      targetAmount: 5000,
-      category: '地方創生'
-    },
-    {
-      id: 4,
-      title: '藝術展覽募資計畫',
-      contractAddress: '0x1357...2468',
-      image: 'https://picsum.photos/400/303',
-      currentAmount: 600,
-      targetAmount: 2000,
-      category: '藝術'
-    }
-  ];
+  const allProjects = await factory.allProjects(); // Assuming this returns an array of all project addresses
+
+  return await Promise.all(
+    allProjects.map(async (address, index) => {
+      const project = new ethers.Contract(address, ProjectAbi, provider); // Initialize the project contract
+
+      // Fetch the creator and project details in parallel
+      const [title, image, target, totalRaised, events] = await Promise.all([
+        project.title().catch(() => "no title"), // Get title or default
+        project.image().catch(() => 'https://picsum.photos/400/300'), // Get image or default
+        project.target().catch(() => 0), // Get target amount or default
+        project.totalRaised().catch(() => 0), // Get total raised or default
+        project.queryFilter(project.filters.Donated(participantAddress)).catch(() => []) // Get donation events
+      ]);
+
+      // Only include projects where the participant has donated
+      if (events.length > 0) {
+        return {
+          id: index + 1, // Unique ID based on index
+          title,
+          contractAddress: address,
+          image,
+          targetAmount: target.toString(), // Convert BigNumber to string
+          currentAmount: totalRaised.toString(), // Convert BigNumber to string
+        };
+      }
+
+      // If no donation found, return null
+      return null;
+    })
+  ).then((projects) => projects.filter((project) => project !== null)); // Remove null entries
+
 };
 
 const ProfilePage = () => {

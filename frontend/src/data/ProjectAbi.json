@@ -64,9 +64,15 @@
 		"payable": false,
 		"stateMutability": "view",
 		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+		  { "indexed": true, "name": "donor", "type": "address" },
+		  { "indexed": false, "name": "amount", "type": "uint256" }
+		],
+		"name": "Donated",
+		"type": "event"
 	}
-
-	
-	
 ]
   
