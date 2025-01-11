@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+import web3Service from '../services/web3Service';
 
 // TODO: 這個函數將來要改為實際從智能合約獲取回饋內容
 const getBenefits = async (contractAddress) => {
@@ -26,6 +28,7 @@ const DonateModal = ({ isOpen, onClose, projectTitle, contractAddress }) => {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [benefits, setBenefits] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [transactionLoading, setTransactionLoading] = useState(false);
 
   const handleBackgroundClick = (e) => {
     if (e.target === e.currentTarget) {
@@ -74,11 +77,62 @@ const DonateModal = ({ isOpen, onClose, projectTitle, contractAddress }) => {
     }
   ];
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selectedPlan) return;
-    // TODO: 處理贊助邏輯
-    console.log('Confirming donation with plan:', selectedPlan);
-    onClose();
+    
+    try {
+      setTransactionLoading(true);
+      
+      console.log('選擇的方案:', selectedPlan);
+      console.log('目標合約地址:', contractAddress);
+      
+      // 確保錢包已連接
+      if (!web3Service.isConnected()) {
+        console.log('錢包未連接，嘗試連接...');
+        await web3Service.connectWallet();
+      }
+      
+      // 檢查網路
+      const isCorrectNetwork = await web3Service.checkNetwork();
+      console.log('網路檢查結果:', isCorrectNetwork);
+      
+      if (!isCorrectNetwork) {
+        alert('請將 MetaMask 切換到 Sepolia 測試網');
+        return;
+      }
+
+      // 確保合約地址是有效的以太坊地址
+      if (!ethers.utils.isAddress(contractAddress)) {
+        console.log('無效的合約地址:', contractAddress);
+        throw new Error('無效的合約地址');
+      }
+
+      // 準備交易資料（模擬用，金額設為 0）
+      const tx = {
+        to: ethers.utils.getAddress(contractAddress),
+        value: ethers.utils.parseEther("0"),
+        gasLimit: 21000
+      };
+
+      console.log('準備發送交易:', tx);
+
+      // 發送交易（這只會觸發 MetaMask 確認視窗）
+      const signer = web3Service.signer;
+      await signer.sendTransaction(tx);
+      
+      // 關閉模態框
+      onClose();
+      
+    } catch (error) {
+      console.error('交易失敗的詳細資訊:', error);
+      if (error.code === 4001) {
+        alert('您取消了交易');
+      } else {
+        alert('交易失敗: ' + error.message);
+      }
+    } finally {
+      setTransactionLoading(false);
+    }
   };
 
   return (
