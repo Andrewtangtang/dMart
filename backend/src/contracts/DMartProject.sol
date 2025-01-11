@@ -168,6 +168,8 @@ contract DMartProject {
     }
 
     function _setProjectFailed(bool confiscateCollateral) internal {
+    // Silence unused variable warning
+    confiscateCollateral;
         require(!projectFailed, "Already failed");
         projectFailed = true;
 

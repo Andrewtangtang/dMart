@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/ConfirmedOwner.sol";
-
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 // 介面定義
 interface IDMartProject {
@@ -199,7 +199,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         );
 
         // 添加 Chainlink 請求的參數
-        req.addUint("milestoneIndex", mIndex); // 指定里程碑索引
+        req._addUint("milestoneIndex", mIndex); // 指定里程碑索引
 
         // 將 Chainlink 請求發送至指定的 Oracle
         bytes32 requestId = _sendChainlinkRequestTo(oracle, req, fee);
@@ -244,8 +244,8 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         );
 
         // 添加 Chainlink 請求的參數
-        req.addUint("milestoneIndex", mIndex); // 指定里程碑索引
-        req.addBytes32("proposalId", ma.proposalId); // 指定提案 ID
+        req._addUint("milestoneIndex", mIndex); // 指定里程碑索引
+        req._add("proposalId", string(abi.encodePacked(ma.proposalId))); // 將 bytes32 轉為 string // 指定提案 ID
 
         // 將 Chainlink 請求發送至指定的 Oracle
         bytes32 requestId = _sendChainlinkRequestTo(oracle, req, fee);

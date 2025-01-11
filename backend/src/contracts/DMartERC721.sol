@@ -3,13 +3,14 @@ pragma solidity ^0.8.0;
 
 // 引入 OpenZeppelin 的 ERC721 標準實現
 import "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title DMartERC721
  * @dev 管理 NFT 的鑄造和追蹤。每個 NFT 代表投資者在特定專案中的貢獻和投票權重。
  *      只有 Factory 合約的擁有者可以鑄造新的 NFT。
  */
-contract DMartERC721 is ERC721 {
+contract DMartERC721 is ERC721, Ownable {
     // 合約擁有者（Factory 合約）的地址
     address private _owner;
 
@@ -50,7 +51,7 @@ contract DMartERC721 is ERC721 {
      * @param name_ ERC721 代幣集合的名稱。
      * @param symbol_ ERC721 代幣的符號。
      */
-    constructor(string memory name_, string memory symbol_) ERC721(name_, symbol_) {
+    constructor(string memory name_, string memory symbol_) ERC721(name_, symbol_) Ownable(msg.sender) {
         _owner = msg.sender; // 初始設定為部署地址（Factory 合約）
     }
 
@@ -58,7 +59,7 @@ contract DMartERC721 is ERC721 {
      * @dev 限制函式訪問僅限合約擁有者。
      *      如果呼叫者不是擁有者，則以 `NotOwner` 錯誤回滾。
      */
-    modifier onlyOwner() {
+    modifier OnlyOwner() {
         if (msg.sender != _owner) revert NotOwner();
         _;
     }
@@ -74,7 +75,7 @@ contract DMartERC721 is ERC721 {
         address to,
         uint256 projectID,
         uint256 weight
-    ) external onlyOwner {
+    ) external OnlyOwner {
         _tokenIds += 1; // 增加代幣 ID 計數器
         uint256 newId = _tokenIds; // 指派新的代幣 ID
 
