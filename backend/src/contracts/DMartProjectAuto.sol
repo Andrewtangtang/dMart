@@ -95,7 +95,6 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         address _project,
         address _factory,
         address _linkToken,
-        address _oracle,
         bytes32 _jobIdCreate,
         bytes32 _jobIdResult,
         uint256 _fee
@@ -105,7 +104,7 @@ contract DMartProjectAuto is ChainlinkClient, KeeperCompatibleInterface, Confirm
         project = IDMartProject(_project); // 初始化 DMartProject 介面
         factory = IDMartFactory(_factory); // 初始化 DMartFactory 介面
 
-        oracle = _oracle;                   // 設定 Oracle 地址
+        oracle = 0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD;                   // 設定 Oracle 地址
         jobIdCreate = _jobIdCreate;         // 設定創建提案的 Job ID
         jobIdResult = _jobIdResult;         // 設定獲取結果的 Job ID
         fee = _fee;                         // 設定 Chainlink 請求的費用
