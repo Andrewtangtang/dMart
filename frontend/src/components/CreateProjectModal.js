@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import web3Service from '../services/web3Service';
 import { ethers } from 'ethers';
+import FactoryAbi from "../data/FactoryAbi.json";
 
 const CreateProjectModal = ({ isOpen, onClose }) => {
   const [formData, setFormData] = useState({
@@ -42,10 +43,10 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
       // 3. 準備合約所需的參數
       const targetAmount = parseInt(formData.targetAmount);
       const depositAmount = Math.floor(targetAmount * 0.3);
-      const durationInSeconds = parseInt(formData.duration) * 30 * 24 * 60 * 60;
+      const duration = parseInt(formData.duration);
 
       // 模擬的合約地址（這裡需要替換成實際的合約地址）
-      const contractAddress = "0x0000000000000000000000000000000000000000";
+      const contractAddress = process.env.REACT_APP_FACTORY_ADDRESS;
 
       // 驗證合約地址格式
       if (!ethers.utils.isAddress(contractAddress)) {
@@ -53,31 +54,30 @@ const CreateProjectModal = ({ isOpen, onClose }) => {
         throw new Error('無效的合約地址');
       }
 
-      // 4. 準備交易資料
-      const tx = {
-        to: ethers.utils.getAddress(contractAddress),
-        value: ethers.utils.parseEther("0"),
-        gasLimit: 21000
-      };
-
-      console.log('Project data:', {
-        title: formData.title,
-        description: formData.descriptionCID,
-        image: formData.imageCID,
-        targetAmount: `${targetAmount} USDT`,
-        deposit: `${depositAmount} USDT`,
-        duration: `${formData.duration} month(s)`,
-        contractAddress: tx.to
-      });
-
-      console.log('Starting transaction');
-
-      // 5. 發送交易
+      // 4. 發送交易
       const signer = web3Service.signer;
-      await signer.sendTransaction(tx);
+      const creator = await signer.getAddress(); // 使用當前 MetaMask 錢包地址作為創建者
 
-      console.log('Transaction sent');
-      
+      const contract = new ethers.Contract(contractAddress, FactoryAbi, signer);
+
+      console.log('Creator:', creator);
+      console.log('Target Amount:', targetAmount);
+      console.log('Duration:', duration);
+      console.log('Title:', formData.title);
+      console.log('Image:', formData.image);
+
+      const tx = await contract.createProject(
+        creator,
+        targetAmount,
+        duration,
+        formData.title,
+        formData.imageCID
+      );
+      console.log('交易已發送:');
+
+      const receipt = await tx.wait();
+      console.log('交易完成:', receipt);
+
     } catch (error) {
       console.log('Transaction failed:', {
         code: error.code,

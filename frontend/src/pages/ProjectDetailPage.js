@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import DonateModal from '../components/DonateModal';
 import web3Service from '../services/web3Service';
+import { ethers,providers, Contract } from 'ethers';
 import { getIPFSUrl } from '../utils/ipfs';
+import FactoryAbi from "../data/FactoryAbi.json";
+import ProjectAbi from "../data/ProjectAbi.json";
 
 // 固定的里程碑階段描述
 const MILESTONE_DESCRIPTIONS = [
@@ -13,151 +16,224 @@ const MILESTONE_DESCRIPTIONS = [
 ];
 
 // 模擬的專案資料
-const MOCK_PROJECTS = {
-  '1': {
-    id: '1',
-    title: '創新科技產品開發計畫',
-    category: '科技',
-    image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
-    targetAmount: 100000,
-    currentAmount: 75000,
-    backerCount: 200,
-    endTime: '2024-02-10T00:00:00Z',
-    milestone: 2,
-    contractAddress: '0x1234...5678',
-    description: `我們正在開發一款革命性的智能產品，結合最新的物聯網技術與人工智慧應用。
+// const MOCK_PROJECTS = {
+//   '1': {
+//     id: '1',
+//     title: '創新科技產品開發計畫',
+//     category: '科技',
+//     image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
+//     targetAmount: 100000,
+//     currentAmount: 75000,
+//     backerCount: 200,
+//     endTime: '2024-02-10T00:00:00Z',
+//     milestone: 2,
+//     contractAddress: '0x1234...5678',
+//     description: `我們正在開發一款革命性的智能產品，結合最新的物聯網技術與人工智慧應用。
     
-    這個產品將改變人們的日常生活方式，提供更智能、更便捷的使用體驗。我們的團隊擁有豐富的研發經驗，
-    致力於將這個創新概念轉化為實際的產品。
+//     這個產品將改變人們的日常生活方式，提供更智能、更便捷的使用體驗。我們的團隊擁有豐富的研發經驗，
+//     致力於將這個創新概念轉化為實際的產品。
     
-    資金將用於：
-    - 產品原型開發
-    - 核心技術研發
-    - 生產線建置
-    - 市場推廣`,
-    plans: [
-      {
-        id: 1,
-        price: 20,
-        title: '基本方案',
-        description: '產品一台 + 專屬贊助者紀念品',
-        estimatedDelivery: '2024-12'
-      },
-      {
-        id: 2,
-        price: 40,
-        title: '進階方案',
-        description: '限定版產品一台 + 專屬贊助者紀念品 + 一年延長保固',
-        estimatedDelivery: '2024-12'
-      }
-    ]
-  },
-  '2': {
-    id: '2',
-    title: '永續時尚設計專案',
-    category: '時尚',
-    image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
-    targetAmount: 50000,
-    currentAmount: 45000,
-    backerCount: 150,
-    endTime: '2024-03-15T00:00:00Z',
-    milestone: 3,
-    contractAddress: '0x9876...4321',
-    description: `我們致力於開發環保永續的時尚產品，使用可回收材料，
-    減少環境污染，為地球盡一份心力。
+//     資金將用於：
+//     - 產品原型開發
+//     - 核心技術研發
+//     - 生產線建置
+//     - 市場推廣`,
+//     plans: [
+//       {
+//         id: 1,
+//         price: 20,
+//         title: '基本方案',
+//         description: '產品一台 + 專屬贊助者紀念品',
+//         estimatedDelivery: '2024-12'
+//       },
+//       {
+//         id: 2,
+//         price: 40,
+//         title: '進階方案',
+//         description: '限定版產品一台 + 專屬贊助者紀念品 + 一年延長保固',
+//         estimatedDelivery: '2024-12'
+//       }
+//     ]
+//   },
+//   '2': {
+//     id: '2',
+//     title: '永續時尚設計專案',
+//     category: '時尚',
+//     image: getIPFSUrl('bafybeidvg6xjnpsy3a7um3vmbwr73vd5ggqycshw5sowpmwb2r2evfvm3q'),
+//     targetAmount: 50000,
+//     currentAmount: 45000,
+//     backerCount: 150,
+//     endTime: '2024-03-15T00:00:00Z',
+//     milestone: 3,
+//     contractAddress: '0x9876...4321',
+//     description: `我們致力於開發環保永續的時尚產品，使用可回收材料，
+//     減少環境污染，為地球盡一份心力。
 
-    資金將用於：
-    - 環保材料研發
-    - 設計打樣
-    - 生產設備
-    - 通路開發`,
-    plans: [
-      {
-        id: 1,
-        price: 20,
-        title: '基本方案',
-        description: '環保服飾一件 + 感謝卡',
-        estimatedDelivery: '2024-09'
-      },
-      {
-        id: 2,
-        price: 40,
-        title: '進階方案',
-        description: '環保服飾兩件 + 限量環保袋',
-        estimatedDelivery: '2024-09'
-      }
-    ]
-  },
-  '3': {
-    id: '3',
-    title: '在地小農支持計畫',
-    category: '地方創生',
-    image: getIPFSUrl('bafkreiawyjbhm2kwm2q3ysy2ccwrc3i5l6dbupqhht4znxcdmi5m3k5lmm'),
-    targetAmount: 30000,
-    currentAmount: 15000,
-    backerCount: 80,
-    endTime: '2024-04-20T00:00:00Z',
-    milestone: 1,
-    contractAddress: '0x2468...1357',
-    description: `支持在地小農，推廣有機農業，
-    建立永續的農業生態系統。
+//     資金將用於：
+//     - 環保材料研發
+//     - 設計打樣
+//     - 生產設備
+//     - 通路開發`,
+//     plans: [
+//       {
+//         id: 1,
+//         price: 20,
+//         title: '基本方案',
+//         description: '環保服飾一件 + 感謝卡',
+//         estimatedDelivery: '2024-09'
+//       },
+//       {
+//         id: 2,
+//         price: 40,
+//         title: '進階方案',
+//         description: '環保服飾兩件 + 限量環保袋',
+//         estimatedDelivery: '2024-09'
+//       }
+//     ]
+//   },
+//   '3': {
+//     id: '3',
+//     title: '在地小農支持計畫',
+//     category: '地方創生',
+//     image: getIPFSUrl('bafkreiawyjbhm2kwm2q3ysy2ccwrc3i5l6dbupqhht4znxcdmi5m3k5lmm'),
+//     targetAmount: 30000,
+//     currentAmount: 15000,
+//     backerCount: 80,
+//     endTime: '2024-04-20T00:00:00Z',
+//     milestone: 1,
+//     contractAddress: '0x2468...1357',
+//     description: `支持在地小農，推廣有機農業，
+//     建立永續的農業生態系統。
 
-    資金將用於：
-    - 有機認證
-    - 包裝設計
-    - 運銷通路
-    - 農地改良`,
-    plans: [
-      {
-        id: 1,
-        price: 20,
-        title: '基本方案',
-        description: '當季有機蔬果一箱 + 小農故事集',
-        estimatedDelivery: '2024-06'
-      },
-      {
-        id: 2,
-        price: 40,
-        title: '進階方案',
-        description: '每月有機蔬果箱 × 2期 + 小農參訪券',
-        estimatedDelivery: '2024-06'
-      }
-    ]
-  }
-};
+//     資金將用於：
+//     - 有機認證
+//     - 包裝設計
+//     - 運銷通路
+//     - 農地改良`,
+//     plans: [
+//       {
+//         id: 1,
+//         price: 20,
+//         title: '基本方案',
+//         description: '當季有機蔬果一箱 + 小農故事集',
+//         estimatedDelivery: '2024-06'
+//       },
+//       {
+//         id: 2,
+//         price: 40,
+//         title: '進階方案',
+//         description: '每月有機蔬果箱 × 2期 + 小農參訪券',
+//         estimatedDelivery: '2024-06'
+//       }
+//     ]
+//   }
+// };
 
 // 模擬合約存儲的參與者資料
-const MOCK_CONTRACT_PARTICIPANTS = {
-  '0x1234...5678': ['0xABCD...1234', '0xEFGH...5678'], // 專案合約地址: [參與者地址陣列]
-  '0x9876...4321': ['0x1111...2222', '0x3333...4444'],
-  '0x2468...1357': ['0x5555...6666', '0xABCD...1234']
+// const MOCK_CONTRACT_PARTICIPANTS = {
+//   '0x1234...5678': ['0xABCD...1234', '0xEFGH...5678'], // 專案合約地址: [參與者地址陣列]
+//   '0x9876...4321': ['0x1111...2222', '0x3333...4444'],
+//   '0x2468...1357': ['0x5555...6666', '0xABCD...1234']
+// };
+const hasParticipatedBefore = async (projectAddress, donorAddress) => {
+  try {
+    // Initialize the project contract
+    const infuraProjectId = process.env.REACT_APP_INFURA_PROJECT_ID;
+    const provider = new providers.JsonRpcProvider(`https://sepolia.infura.io/v3/${infuraProjectId}`);
+    const project = new Contract(projectAddress, ProjectAbi, provider);
+
+    // Create the event filter for the donor
+    const filter = project.filters.Donated(donorAddress);
+
+    // Query the logs for the Donated event
+    const events = await project.queryFilter(filter);
+
+    console.log(events);
+
+    // Check if there are any matching events
+    console.log("hasParticipated",events.length > 0);
+    return events.length > 0;
+  } catch (error) {
+    console.error('Error checking donation history:', error);
+    return false; // Return false if there’s an error
+  }
 };
 
-// 獲取專案詳細資訊
-const getProjectDetails = async (projectId) => {
-  // 根據 ID 返回對應的專案資料
-  const projectData = MOCK_PROJECTS[projectId];
-  if (!projectData) {
-    throw new Error('找不到專案資料');
-  }
 
+// 獲取專案詳細資訊
+const getProjectDetails = async (projectAddress) => {
+  // 根據 ID 返回對應的專案資料
   try {
-    // 從 IPFS 獲取描述內容
-    const response = await fetch(getIPFSUrl('bafkreig5nawy5kiz5fqfg47sazbsdzvfowwjmvzqgkgvu432fbughwyp7i'));
+    const infuraProjectId = process.env.REACT_APP_INFURA_PROJECT_ID;
+    const provider = new providers.JsonRpcProvider(`https://sepolia.infura.io/v3/${infuraProjectId}`);
+    const project = new Contract(projectAddress, ProjectAbi, provider);
+
+    // Fetch project details sequentially
+    const title = await project.title().catch(() => '未命名項目');
+    const image = await project.image().catch(() => null);
+    const targetAmount = await project.target().catch(() => 0);
+    const currentAmount = await project.totalRaised().catch(() => 0);
+    const endTime = '1970-01-01T00:00:00Z';
+    const milestone = await project.currentMilestone().catch(() => 0);
+    // Create a filter for all `Donated` events
+    const filter = project.filters.Donated();
+
+    // Query the logs for the Donated events
+    const events = await project.queryFilter(filter);
+    
+    const backerCount = events.length;
+    // Fetch description from IPFS (if needed)
+    const response = await fetch("https://gateway.pinata.cloud/ipfs/bafkreiebfc6j472okfzrasfn2hqxxl3ihud45ccwai7eppidf34y5tiexm");
+    if (!response.ok) {
+      throw new Error("Failed to fetch the file");
+    }
     const description = await response.text();
+        
+    const resolvedImage = image ? getIPFSUrl(image) : 'https://picsum.photos/400/300';
     
-    // 印出從 IPFS 獲取的描述內容
-    console.log('從 IPFS 獲取的描述內容:', description);
-    console.log('IPFS URL:', getIPFSUrl('bafkreig5nawy5kiz5fqfg47sazbsdzvfowwjmvzqgkgvu432fbughwyp7i'));
-    
-    // 更新專案資料中的描述
+    const plans = [
+      {
+        id: 1,
+        price: 20,
+        title: '基本方案',
+        description: '基本方案',
+        estimatedDelivery: '2025-06'
+      },
+      {
+        id: 2,
+        price: 40,
+        title: '進階方案',
+        description: '進階方案',
+        estimatedDelivery: '2025-06'
+      }
+    ]
+
+    // Format plans (if the contract returns plans data)
+    const formattedPlans = plans.map((plan, index) => ({
+      id: index + 1,
+      price: plan.price, // Convert Wei to ETH
+      title: plan.title,
+      description: plan.description,
+      estimatedDelivery: plan.estimatedDelivery
+    }));
+
+    // Construct the formatted project object
     return {
-      ...projectData,
-      description
+      title,
+      category: '科技', // Replace with actual category if available
+      image: resolvedImage,
+      targetAmount: parseInt(targetAmount.toString(), 10),
+      currentAmount: parseInt(currentAmount.toString(), 10),
+      backerCount: backerCount,
+      endTime: new Date(parseInt(endTime) * 1000).toISOString(), // Convert timestamp to ISO string
+      milestone: parseInt(milestone.toString(), 10),
+      contractAddress: projectAddress,
+      description,
+      plans: formattedPlans
     };
   } catch (error) {
-    console.error('從 IPFS 獲取描述失敗:', error);
-    return projectData; // 如果獲取失敗，返回原始資料
+    console.error('Error fetching project details:', error);
+    return null;
   }
 };
 
@@ -210,16 +286,16 @@ const ProjectDetailPage = () => {
       try {
         setLoading(true);
         const details = await getProjectDetails(id);
+        console.log(details);
         setProjectData(details);
 
         // 檢查用戶是否參與此專案
         if (web3Service.isConnected()) {
           const userAddress = web3Service.getCurrentAccount();
-          // 從模擬的合約資料中檢查用戶是否為參與者
-          const projectParticipants = MOCK_CONTRACT_PARTICIPANTS[details.contractAddress] || [];
-          const isParticipated = projectParticipants.includes(userAddress);
-          setHasParticipated(isParticipated);
+          const participated = await hasParticipatedBefore(id,userAddress);
+          setHasParticipated(participated);
         }
+
       } catch (err) {
         setError(err.message);
         console.error('獲取專案資料失敗:', err);

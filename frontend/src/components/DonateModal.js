@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
+import { ethers,Contract } from 'ethers';
 import web3Service from '../services/web3Service';
+import ProjectAbi from "../data/ProjectAbi.json";
 
 // TODO: 這個函數將來要改為實際從智能合約獲取回饋內容
 const getBenefits = async (contractAddress) => {
@@ -107,19 +108,17 @@ const DonateModal = ({ isOpen, onClose, projectTitle, contractAddress }) => {
         throw new Error('無效的合約地址');
       }
 
-      // 準備交易資料（模擬用，金額設為 0）
-      const tx = {
-        to: ethers.utils.getAddress(contractAddress),
-        value: ethers.utils.parseEther("0"),
-        gasLimit: 21000
-      };
-
-      console.log('準備發送交易:', tx);
-
       // 發送交易（這只會觸發 MetaMask 確認視窗）
       const signer = web3Service.signer;
-      await signer.sendTransaction(tx);
-      
+      const contract = new Contract(contractAddress, ProjectAbi, signer);
+      const donationAmount = selectedPlan.price;
+      const tx = await contract.donate(donationAmount);
+      console.log('交易已發送:', tx.hash);
+
+      // 等待交易完成
+      const receipt = await tx.wait();
+      console.log('交易完成:', receipt);
+        
       // 關閉模態框
       onClose();
       

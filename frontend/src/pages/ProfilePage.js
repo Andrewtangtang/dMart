@@ -3,6 +3,15 @@ import { Link } from 'react-router-dom';
 import ProjectCard from '../components/ProjectCard';
 import CreateProjectModal from '../components/CreateProjectModal';
 import web3Service from '../services/web3Service';
+import { providers, Contract } from 'ethers';
+import FactoryAbi from "../data/FactoryAbi.json";
+import ProjectAbi from "../data/ProjectAbi.json";
+import { getIPFSUrl } from '../utils/ipfs';
+
+const infuraProjectId = process.env.REACT_APP_INFURA_PROJECT_ID;
+const provider = new providers.JsonRpcProvider(`https://sepolia.infura.io/v3/${infuraProjectId}`);
+const factoryAddress = process.env.REACT_APP_FACTORY_ADDRESS;
+const factory = new Contract(factoryAddress, FactoryAbi, provider);
 
 // 獲取用戶資訊
 const getUserProfile = async (address) => {
@@ -21,53 +30,91 @@ const getUserProfile = async (address) => {
 };
 
 // 獲取用戶發起的專案列表
-const getUserCreatedProjects = async (address) => {
+const getUserCreatedProjects = async (creatorAddress) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
-  return [
-    {
-      id: 1,
-      title: '創新科技產品開發計畫',
-      contractAddress: address,
-      image: 'https://picsum.photos/400/300',
-      currentAmount: 1500,
-      targetAmount: 2000,
-      category: '科技'
-    }
-  ];
+  const totalProjects = await factory.allProjectsLength();
+
+  // Traverse through the projects and fetch addresses
+  const allProjects = await Promise.all(
+    Array.from({ length: totalProjects.toNumber() }, (_, index) => factory.allProjects(index))
+  );
+
+  return await Promise.all(
+    allProjects.map(async (address, index) => {
+      const project = new Contract(address, ProjectAbi, provider); // Initialize the project contract
+
+      // Fetch the creator and project details in parallel
+      const [creator, title, image, target, totalRaised] = await Promise.all([
+        project.creator().catch(() => "0x0000000000000000000000000000000000000000"), // Get creator address or default
+        project.title().catch(() => "no title"), // Get title or default
+        project.image().catch(() => null), // Get image or default
+        project.target().catch(() => 0), // Get target amount or default
+        project.totalRaised().catch(() => 0) // Get total raised or default
+      ]);
+
+      const resolvedImage = image ? getIPFSUrl(image) : 'https://picsum.photos/400/300';
+
+      // Only include projects created by the specified creator
+      if (creator.toLowerCase() === creatorAddress.toLowerCase()) {
+        return {
+          id: index + 1, // Unique ID based on index
+          title,
+          contractAddress: address,
+          image: resolvedImage,
+          targetAmount: target.toString(), // Convert BigNumber to string
+          currentAmount: totalRaised.toString() // Convert BigNumber to string
+        };
+      }
+
+      // If the creator does not match, return null
+      return null;
+    })
+  ).then((projects) => projects.filter((project) => project !== null)); // Remove null entries
+
 };
 
 // 獲取用戶參與的專案列表
-const getUserParticipatedProjects = async (address) => {
+const getUserParticipatedProjects = async (participantAddress) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
-  return [
-    {
-      id: 2,
-      title: '永續時尚設計專案',
-      contractAddress: '0x9876...4321',
-      image: 'https://picsum.photos/400/301',
-      currentAmount: 3000,
-      targetAmount: 3000,
-      category: '時尚'
-    },
-    {
-      id: 3,
-      title: '在地小農支持計畫',
-      contractAddress: '0x2468...1357',
-      image: 'https://picsum.photos/400/302',
-      currentAmount: 4500,
-      targetAmount: 5000,
-      category: '地方創生'
-    },
-    {
-      id: 4,
-      title: '藝術展覽募資計畫',
-      contractAddress: '0x1357...2468',
-      image: 'https://picsum.photos/400/303',
-      currentAmount: 600,
-      targetAmount: 2000,
-      category: '藝術'
-    }
-  ];
+  const totalProjects = await factory.allProjectsLength();
+
+  // Traverse through the projects and fetch addresses
+  const allProjects = await Promise.all(
+    Array.from({ length: totalProjects.toNumber() }, (_, index) => factory.allProjects(index))
+  );
+
+  console.log(allProjects);
+
+  return await Promise.all(
+    allProjects.map(async (address, index) => {
+      const project = new Contract(address, ProjectAbi, provider); // Initialize the project contract
+
+      // Fetch the creator and project details in parallel
+      const [title, image, target, totalRaised, events] = await Promise.all([
+        project.title().catch(() => "no title"), // Get title or default
+        project.image().catch(() => 'https://picsum.photos/400/300'), // Get image or default
+        project.target().catch(() => 0), // Get target amount or default
+        project.totalRaised().catch(() => 0), // Get total raised or default
+        project.queryFilter(project.filters.Donated(participantAddress)).catch(() => []) // Get donation events
+      ]);
+
+      // Only include projects where the participant has donated
+      if (events.length > 0) {
+        return {
+          id: index + 1, // Unique ID based on index
+          title,
+          contractAddress: address,
+          image,
+          targetAmount: target.toString(), // Convert BigNumber to string
+          currentAmount: totalRaised.toString(), // Convert BigNumber to string
+        };
+      }
+
+      // If no donation found, return null
+      return null;
+    })
+  ).then((projects) => projects.filter((project) => project !== null)); // Remove null entries
+
 };
 
 const ProfilePage = () => {
@@ -91,16 +138,24 @@ const ProfilePage = () => {
       
       try {
         setLoading(true);
-        const [profile, created, participated] = await Promise.all([
-          getUserProfile(address),
-          getUserCreatedProjects(address),
-          getUserParticipatedProjects(address)
-        ]);
-
+        const profile = await getUserProfile(address).catch((error) => {
+          console.error('獲取用戶資料失敗:', error);
+          throw new Error('無法獲取用戶資料');
+        });
         setUserProfile(profile);
+    
+        const created = await getUserCreatedProjects(address).catch((error) => {
+          console.error('獲取用戶創建的項目失敗:', error);
+          throw new Error('無法獲取創建的項目');
+        });
         setCreatedProjects(created);
+    
+        const participated = await getUserParticipatedProjects(address).catch((error) => {
+          console.error('獲取用戶參與的項目失敗:', error);
+          throw new Error('無法獲取參與的項目');
+        });
         setParticipatedProjects(participated);
-      } catch (err) {
+          } catch (err) {
         setError(err.message);
         console.error('獲取用戶資料失敗:', err);
       } finally {

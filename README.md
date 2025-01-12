@@ -11,7 +11,18 @@ yarn install
 ```
 ---
 
-### 2. Run Frontend
+### 2. Create .env
+```
+touch .env
+```
+
+type this in ```.env```
+```
+REACT_APP_INFURA_PROJECT_ID=10311d634e48456eb1a692b8952d47eb
+REACT_APP_FACTORY_ADDRESS=0x8E3BfcfC9385A3159877a93f02F1C340136Ee9B7
+```
+
+### 3. Run Frontend
 
 ```
 yarn start

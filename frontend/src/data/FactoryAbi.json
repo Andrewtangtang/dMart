@@ -1,0 +1,74 @@
+[
+	{
+		"constant": true,
+		"inputs": [{ "name": "", "type": "uint256" }],
+		"name": "allProjects",
+		"outputs": [{ "name": "", "type": "address" }],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [],
+		"name": "allProjectsLength",
+		"outputs": [{ "name": "", "type": "uint256" }],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},	
+	{
+		"constant": true,
+		"inputs": [{ "name": "", "type": "uint8" }],
+		"name": "durationOptions",
+		"outputs": [{ "name": "", "type": "uint256" }],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [{ "name": "", "type": "address" }],
+		"name": "projectDeadlines",
+		"outputs": [{ "name": "", "type": "uint256" }],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+		{ "indexed": true, "name": "projectAddress", "type": "address" },
+		{ "indexed": true, "name": "creator", "type": "address" },
+		{ "indexed": false, "name": "target", "type": "uint256" },
+		{ "indexed": false, "name": "durationChoice", "type": "uint8" },
+		{ "indexed": false, "name": "deadline", "type": "uint256" }
+		],
+		"name": "ProjectCreated",
+		"type": "event"
+	},
+	{
+		"constant": true,
+		"inputs": [{ "name": "creator", "type": "address" }],
+		"name": "getProjects",
+		"outputs": [{ "name": "", "type": "address[]" }],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+		  {  "name": "creator", "type": "address" },
+		  {  "name": "target", "type": "uint256" },
+		  {  "name": "durationChoice", "type": "uint8" },
+		  {  "name": "title", "type": "string" },
+		  {  "name": "image", "type": "string" }
+		],
+		"name": "createProject",
+		"outputs": [
+		  { "name": "projectAddress", "type": "address" }
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	}	
+]
