@@ -1,11 +1,11 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const ProjectCard = ({ id, title, contractAddress, image, progress }) => {
+const ProjectCard = ({ title, contractAddress, image, progress }) => {
   const navigate = useNavigate();
 
   const handleClick = () => {
-    navigate(`/project/${id}`);
+    navigate(`/project/${contractAddress}`);
   };
 
   return (

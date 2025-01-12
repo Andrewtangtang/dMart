@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import ProjectCard from '../components/ProjectCard';
 import CreateProjectModal from '../components/CreateProjectModal';
 import web3Service from '../services/web3Service';
-import { FactoryAbi } from "../data/FactoryAbi.json";
-import { ProjectAbi } from "../data/ProjectAbi.json";
+import { providers, Contract } from 'ethers';
+import FactoryAbi from "../data/FactoryAbi.json";
+import ProjectAbi from "../data/ProjectAbi.json";
+import { getIPFSUrl } from '../utils/ipfs';
 
 const infuraProjectId = process.env.REACT_APP_INFURA_PROJECT_ID;
 const provider = new providers.JsonRpcProvider(`https://sepolia.infura.io/v3/${infuraProjectId}`);
@@ -30,11 +32,16 @@ const getUserProfile = async (address) => {
 // 獲取用戶發起的專案列表
 const getUserCreatedProjects = async (creatorAddress) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
-  const allProjects = await factory.allProjects(); // Assuming this returns an array of all project addresses
+  const totalProjects = await factory.allProjectsLength();
+
+  // Traverse through the projects and fetch addresses
+  const allProjects = await Promise.all(
+    Array.from({ length: totalProjects.toNumber() }, (_, index) => factory.allProjects(index))
+  );
 
   return await Promise.all(
     allProjects.map(async (address, index) => {
-      const project = new ethers.Contract(address, ProjectAbi, provider); // Initialize the project contract
+      const project = new Contract(address, ProjectAbi, provider); // Initialize the project contract
 
       // Fetch the creator and project details in parallel
       const [creator, title, image, target, totalRaised] = await Promise.all([
@@ -69,11 +76,18 @@ const getUserCreatedProjects = async (creatorAddress) => {
 // 獲取用戶參與的專案列表
 const getUserParticipatedProjects = async (participantAddress) => {
   // TODO: 這裡將來要改為實際從智能合約獲取資料
-  const allProjects = await factory.allProjects(); // Assuming this returns an array of all project addresses
+  const totalProjects = await factory.allProjectsLength();
+
+  // Traverse through the projects and fetch addresses
+  const allProjects = await Promise.all(
+    Array.from({ length: totalProjects.toNumber() }, (_, index) => factory.allProjects(index))
+  );
+
+  console.log(allProjects);
 
   return await Promise.all(
     allProjects.map(async (address, index) => {
-      const project = new ethers.Contract(address, ProjectAbi, provider); // Initialize the project contract
+      const project = new Contract(address, ProjectAbi, provider); // Initialize the project contract
 
       // Fetch the creator and project details in parallel
       const [title, image, target, totalRaised, events] = await Promise.all([
@@ -124,16 +138,24 @@ const ProfilePage = () => {
       
       try {
         setLoading(true);
-        const [profile, created, participated] = await Promise.all([
-          getUserProfile(address),
-          getUserCreatedProjects(address),
-          getUserParticipatedProjects(address)
-        ]);
-
+        const profile = await getUserProfile(address).catch((error) => {
+          console.error('獲取用戶資料失敗:', error);
+          throw new Error('無法獲取用戶資料');
+        });
         setUserProfile(profile);
+    
+        const created = await getUserCreatedProjects(address).catch((error) => {
+          console.error('獲取用戶創建的項目失敗:', error);
+          throw new Error('無法獲取創建的項目');
+        });
         setCreatedProjects(created);
+    
+        const participated = await getUserParticipatedProjects(address).catch((error) => {
+          console.error('獲取用戶參與的項目失敗:', error);
+          throw new Error('無法獲取參與的項目');
+        });
         setParticipatedProjects(participated);
-      } catch (err) {
+          } catch (err) {
         setError(err.message);
         console.error('獲取用戶資料失敗:', err);
       } finally {

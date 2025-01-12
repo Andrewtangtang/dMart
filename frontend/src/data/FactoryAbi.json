@@ -59,12 +59,8 @@
 	{
 		"inputs": [
 		  {  "name": "creator", "type": "address" },
-		  {  "name": "platform", "type": "address" },
 		  {  "name": "target", "type": "uint256" },
 		  {  "name": "durationChoice", "type": "uint8" },
-		  {  "name": "defaultUSDT", "type": "address" },
-		  {  "name": "defaultAavePool", "type": "address" },
-		  {  "name": "defaultAToken", "type": "address" },
 		  {  "name": "title", "type": "string" },
 		  {  "name": "image", "type": "string" }
 		],
